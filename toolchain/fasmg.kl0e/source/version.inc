@@ -1,1 +1,0 @@
-VERSION equ "kl0e"
