@@ -17,14 +17,23 @@ $fasmg = join-path $path_fasmg 'fasmg.exe'
 
 verify-path $path_build
 push-location $path_build
-function build-hello
-{
-	$env:include = join-path $path_fasm2 'include'
+	function build-hello {
+		$env:include = join-path $path_fasm2 'include'
 
-	$asm_hello = join-path $path_source 'hello.asm'
-	$exe_hello = 'hello.exe'
+		$asm_hello = join-path $path_source 'hello.asm'
+		$exe_hello = 'hello.exe'
 
-	& $fasmg $asm_hello $exe_hello
-}
-build-hello
+		& $fasmg $asm_hello $exe_hello
+		# & $fasm $asm_hello '-s' 'hello.fas'
+	}
+	build-hello
+
+	function build-copy_hello {
+		$env:include = join-path $path_fasm2 'include'
+
+		$local:asm   = join-path $path_source 'copy_hello.asm'
+		$local:exe   = 'copy_hello.exe'
+		& $fasmg $asm $exe
+	}
+	# build-copy_hello
 pop-location
