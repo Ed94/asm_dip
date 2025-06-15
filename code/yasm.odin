@@ -1,0 +1,6 @@
+package yasm
+
+
+main :: proc()
+{
+}
