@@ -1,3 +1,3 @@
-package asmd // ASM Duffle
+package asmduff // ASM Duffle
 
 

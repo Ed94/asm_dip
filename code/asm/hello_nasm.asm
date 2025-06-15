@@ -2,17 +2,18 @@
 BITS 64                         ; Explicitly specify 64-bit mode
 DEFAULT REL                     ; Use RIP-relative addressing by default
 
+extern ExitProcess            ; Import Windows API functions
+extern GetStdHandle
+extern WriteConsoleA
+
 ; Data section
 section .data
-    message db "Hello, x86-64 ASM!", 13, 10, 0  ; String with CRLF and null terminator
+    message db "Hello, NASM!", 13, 10, 0  ; String with CRLF and null terminator
     message_len equ $ - message                 ; Calculate string length
 
 ; Code section
 section .text
 global main                    ; Export main symbol for linker
-extern ExitProcess            ; Import Windows API functions
-extern GetStdHandle
-extern WriteConsoleA
 
 main:
 	; Function prologue
