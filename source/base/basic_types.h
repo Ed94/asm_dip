@@ -122,7 +122,4 @@ typedef s8  b8;
 typedef s16 b16;
 typedef s32 b32;
 
-typedef void*       memptr;
-typedef void const* memptr_const;
-
 #pragma endregion Basic Types

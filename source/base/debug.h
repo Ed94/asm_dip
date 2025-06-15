@@ -19,14 +19,14 @@
 
 #define ASSERT( cond ) ASSERT( cond, NULL )
 
-#define ASSERT_MSG( cond, msg, ... )                                                         \
-	do                                                                                       \
-	{                                                                                        \
-		if ( ! ( cond ) )                                                                    \
-		{                                                                                    \
-			assert_handler( #cond, __FILE__, scast( s64, __LINE__ ), msg, ##__VA_ARGS__ );   \
-			GEN_DEBUG_TRAP();                                                                \
-		}                                                                                    \
+#define ASSERT_MSG( cond, msg, ... )                                                 \
+	do                                                                                 \
+	{                                                                                  \
+		if ( ! ( cond ) )                                                                \
+		{                                                                                \
+			assert_handler( #cond, __FILE__, scast( s64, __LINE__ ), msg, ##__VA_ARGS__ ); \
+			GEN_DEBUG_TRAP();                                                              \
+		}                                                                                \
 	} while ( 0 )
 
 #define ASSERT_NOT_NULL( ptr ) ASSERT_MSG( ( ptr ) != NULL, #ptr " must not be NULL" )
@@ -35,24 +35,24 @@
 #define PANIC( msg, ... ) ASSERT_MSG( 0, msg, ##__VA_ARGS__ )
 
 #if Build_Debug
-	#define FATAL( ... )                                   \
-	do                                                     \
-	{                                                      \
-		local_persist thread_local                         \
-		char buf[GEN_PRINTF_MAXLEN] = { 0 };               \
-		                                                   \
-		str_fmt(buf, PRINTF_MAXLEN, __VA_ARGS__);          \
-		PANIC(buf);                                        \
-	}                                                      \
+	#define FATAL( ... )                        \
+	do                                          \
+	{                                           \
+		local_persist thread_local                \
+		char buf[GEN_PRINTF_MAXLEN] = { 0 };      \
+		                                          \
+		str_fmt(buf, PRINTF_MAXLEN, __VA_ARGS__); \
+		PANIC(buf);                               \
+	}                                           \
 	while (0)
 #else
 
-#	define FATAL( ... )                      \
-	do                                       \
-	{                                        \
-		str_fmt_out_err( __VA_ARGS__ );      \
-		process_exit(1);                     \
-	}                                        \
+#	define FATAL( ... )               \
+	do                                \
+	{                                 \
+		str_fmt_out_err( __VA_ARGS__ ); \
+		process_exit(1);                \
+	}                                 \
 	while (0)
 #endif
 

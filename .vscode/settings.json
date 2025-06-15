@@ -1,9 +1,0 @@
-{
-	"files.associations": {
-		"*.rmd": "markdown",
-		"pop_ignores.inline.h": "c",
-		"basic_types.h": "c",
-		"push_ignores.inline.h": "c",
-		"memory.h": "c"
-	}
-}

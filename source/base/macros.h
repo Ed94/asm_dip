@@ -48,17 +48,17 @@
 #ifndef do_once
 #define do_once( statement ) for ( local_persist b32 once = true; once; once = false, (statement) )
 
-#define do_once_start      \
-	do                     \
-	{                      \
+#define do_once_start  \
+	do                   \
+	{                    \
 		local_persist      \
 		bool done = false; \
 		if ( done )        \
-			break;         \
+			break;           \
 		done = true;
 
-#define do_once_end        \
-	}                      \
+#define do_once_end    \
+	}                    \
 	while(0);
 #endif
 
