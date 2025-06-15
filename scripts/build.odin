@@ -64,7 +64,8 @@ flag_show_more_timings         :: "-show-more-timings"
 flag_show_system_calls         :: "-show-system-calls"
 flag_target                    :: "-target:"
 flag_thread_count              :: "-thread-count:"
-flag_use_lld                   :: "-lld"
+flag_use_lld                   :: "-linker:lld"
+flag_use_rad_link              :: "-linker:radlink"
 flag_use_separate_modules      :: "-use-separate-modules"
 flag_vet_all                   :: "-vet"
 flag_vet_unused_entities       :: "-vet-unused"
@@ -73,8 +74,6 @@ flag_vet_shadow_vars           :: "-vet-shadowing"
 flag_vet_using_stmt            :: "-vet-using-stmt"
 
 flag_microarch_zen5 :: "--microarch:znver5"
-
-flag_rad_linker :: "-radlink"
 
 flag_msvc_link_disable_dynamic_base :: "/DYNAMICBASE:NO"
 flag_msvc_link_base_address         :: "/BASE:"
@@ -98,8 +97,8 @@ main :: proc() {
 	path_root   := get_working_dir()
 	path_build  := join_path(path_root,  "build")
 	path_code   := join_path(path_root,  "code")
-	file_source := join_path(path_code,  "yasm.odin")
-	file_exe    := join_path(path_build, "yasm.exe")
+	file_source := join_path(path_code,  "host.odin")
+	file_exe    := join_path(path_build, "host.exe")
 
 	res, errs := build(path_build, {
 		exe_odin,
@@ -111,9 +110,9 @@ main :: proc() {
 		flag_default_allocator_nil,
 		flag_debug,
 		flag_microarch_zen5,
-		flag_rad_linker,
 		flag_no_thread_checker,
 		flag_show_timings,
+		flag_use_rad_link,
 		join_str(flag_subsystem, "console"),
 	})
 	fmt.println(res)

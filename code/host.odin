@@ -1,6 +1,6 @@
-package yasm
-
+package asmd
 
 main :: proc()
 {
+	
 }

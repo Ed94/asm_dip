@@ -36,6 +36,6 @@ $build_args += $flag_no_type_assert
 $build_args += $flag_dyn_map_calls
 $build_args += $flag_default_allocator_nil
 $build_args += $flag_output_path + $exe
-& $odin $build_args
+# & $odin $build_args
 & $exe
 pop-location
