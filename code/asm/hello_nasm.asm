@@ -9,7 +9,7 @@ extern WriteConsoleA
 ; Data section
 section .data
     message db "Hello, NASM!", 13, 10, 0  ; String with CRLF and null terminator
-    message_len equ $ - message                 ; Calculate string length
+    message_len equ $ - message	                 ; Calculate string length
 
 ; Code section
 section .text
