@@ -39,6 +39,7 @@ $args = @(
 	$hello_nasm,
 	$f_optimize_none,
 	# $f_preprocess_only,
+	# ($f_dmacro + "BUILD_DEBUG 1"),
 	$f_bin_fmt_win64,
 	$f_debug_fmt_win64,
 	($f_listing + $listing),
@@ -54,6 +55,7 @@ $link = 'link.exe'
 $link_debug                  = '/DEBUG:'
 $link_entrypoint             = '/ENTRY:'
 $link_library                = '/'
+$link_large_address_aware    = '/LARGEADDRESSAWARE:NO'
 $link_outfile                = '/OUT:'
 $link_win_machine_64         = '/MACHINE:X64'
 $link_win_subsystem_console  = '/SUBSYSTEM:CONSOLE'
@@ -62,8 +64,10 @@ $rad_debug                   = '/RAD_DEBUG'
 $rad_debug_name              = '/RAD_DEBUG_NAME:'
 $rad_large_pages             = '/RAD_LARGE_PAGES:'
 $args = @(
-	$rad_debug,
+	$link_debug,
+	# $rad_debug,
 	# ($link_debug + 'FULL'),
+	$link_large_address_aware,
 	$link_win_machine_64,
 	$link_win_subsystem_console,
 	$lib_kernel32,
