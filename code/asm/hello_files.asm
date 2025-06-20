@@ -40,6 +40,110 @@ DEFAULT REL ; Use RIP-relative addressing by default
 	xor r14, r14
 	xor r15, r15
 %endmacro
+
+; Resets the Floating-Point Unit (FPU), which also clears all MMX registers
+; (MM0-MM7) and FPU stack registers (ST0-ST7).
+%macro wipe_fpu_mmxs 0
+    finit
+%endmacro
+
+; Wipes the 128-bit XMM registers. Requires a CPU with at least SSE.
+%macro wipe_xmms 0
+    vxorps  xmm0,  xmm0,  xmm0
+    vxorps  xmm1,  xmm1,  xmm1
+    vxorps  xmm2,  xmm2,  xmm2
+    vxorps  xmm3,  xmm3,  xmm3
+    vxorps  xmm4,  xmm4,  xmm4
+    vxorps  xmm5,  xmm5,  xmm5
+    vxorps  xmm6,  xmm6,  xmm6
+    vxorps  xmm7,  xmm7,  xmm7
+    vxorps  xmm8,  xmm8,  xmm8
+    vxorps  xmm9,  xmm9,  xmm9
+    vxorps  xmm10, xmm10, xmm10
+    vxorps  xmm11, xmm11, xmm11
+    vxorps  xmm12, xmm12, xmm12
+    vxorps  xmm13, xmm13, xmm13
+    vxorps  xmm14, xmm14, xmm14
+    vxorps  xmm15, xmm15, xmm15
+%endmacro
+
+; =============================================================================
+; AVX Registers (YMM0-YMM15)
+; =============================================================================
+; Wipes the 256-bit YMM registers. Requires a CPU with AVX support.
+; This also wipes the lower 128 bits (the XMM registers), so you don't
+; need to call WIPE_XMM_REGS if you call this one.
+%macro wipe_ymms 0
+    vzeroupper                ; Clears upper 128 bits of all YMM registers
+    vxorps  ymm0,  ymm0,  ymm0  ; Clears the full YMM0 (including lower XMM0)
+    vxorps  ymm1,  ymm1,  ymm1
+    vxorps  ymm2,  ymm2,  ymm2
+    vxorps  ymm3,  ymm3,  ymm3
+    vxorps  ymm4,  ymm4,  ymm4
+    vxorps  ymm5,  ymm5,  ymm5
+    vxorps  ymm6,  ymm6,  ymm6
+    vxorps  ymm7,  ymm7,  ymm7
+    vxorps  ymm8,  ymm8,  ymm8
+    vxorps  ymm9,  ymm9,  ymm9
+    vxorps  ymm10, ymm10, ymm10
+    vxorps  ymm11, ymm11, ymm11
+    vxorps  ymm12, ymm12, ymm12
+    vxorps  ymm13, ymm13, ymm13
+    vxorps  ymm14, ymm14, ymm14
+    vxorps  ymm15, ymm15, ymm15
+%endmacro
+
+; =============================================================================
+; AVX-512 Registers (ZMM0-ZMM31 and K0-K7)
+; =============================================================================
+; Wipes the 512-bit ZMM registers and the 8 mask registers (k0-k7).
+; Requires a CPU with AVX-512F support. This is the most comprehensive
+; vector register wipe and makes WIPE_XMM_REGS and WIPE_YMM_REGS redundant.
+%macro wipe_avx512s 0
+    ; Wipe Mask Registers (k0-k7)
+    kxorb   k0, k0, k0
+    kxorb   k1, k1, k1
+    kxorb   k2, k2, k2
+    kxorb   k3, k3, k3
+    kxorb   k4, k4, k4
+    kxorb   k5, k5, k5
+    kxorb   k6, k6, k6
+    kxorb   k7, k7, k7
+
+    ; Wipe ZMM registers (zmm0-zmm31)
+    vpxord  zmm0, zmm0, zmm0
+    vpxord  zmm1, zmm1, zmm1
+    vpxord  zmm2, zmm2, zmm2
+    vpxord  zmm3, zmm3, zmm3
+    vpxord  zmm4, zmm4, zmm4
+    vpxord  zmm5, zmm5, zmm5
+    vpxord  zmm6, zmm6, zmm6
+    vpxord  zmm7, zmm7, zmm7
+    vpxord  zmm8, zmm8, zmm8
+    vpxord  zmm9, zmm9, zmm9
+    vpxord  zmm10, zmm10, zmm10
+    vpxord  zmm11, zmm11, zmm11
+    vpxord  zmm12, zmm12, zmm12
+    vpxord  zmm13, zmm13, zmm13
+    vpxord  zmm14, zmm14, zmm14
+    vpxord  zmm15, zmm15, zmm15
+    vpxord  zmm16, zmm16, zmm16
+    vpxord  zmm17, zmm17, zmm17
+    vpxord  zmm18, zmm18, zmm18
+    vpxord  zmm19, zmm19, zmm19
+    vpxord  zmm20, zmm20, zmm20
+    vpxord  zmm21, zmm21, zmm21
+    vpxord  zmm22, zmm22, zmm22
+    vpxord  zmm23, zmm23, zmm23
+    vpxord  zmm24, zmm24, zmm24
+    vpxord  zmm25, zmm25, zmm25
+    vpxord  zmm26, zmm26, zmm26
+    vpxord  zmm27, zmm27, zmm27
+    vpxord  zmm28, zmm28, zmm28
+    vpxord  zmm29, zmm29, zmm29
+    vpxord  zmm30, zmm30, zmm30
+    vpxord  zmm31, zmm31, zmm31
+%endmacro
 ;endregion Registers
 
 ;region Debug
@@ -52,23 +156,21 @@ DEFAULT REL ; Use RIP-relative addressing by default
 		int debug_trap
 	%%.passed: ; macro-unique-prefix (%%) .passed is the label name
 	%endmacro
-	%macro slice_assert 1
-		cmp qword [%1 + Slice.ptr], 0
-		jnz %%.ptr_passed
-		int debug_trap
-	%%.ptr_passed:
-		cmp qword [%1 + Slice.len]
-		jg  %%.len_passed
-		int debug_trap
-	%%.len_passed:
-	%endmacro
-	%define dbg_wipe_gprs wipe_gprs
+	%define dbg_wipe_gprs     wipe_gprs
+	%define dbg_wipe_fpu_mmxs wipe_fpu_mmxs
+	%define dbg_wipe_xmms     wipe_xmms
+	%define dbg_wipe_ymms     wipe_ymms
+	%define dbg_wipe_avx512s  wipe_avx512s
 %else
 	%macro assert_not_null 1
 	%endmacro
 	%macro slice_assert 1
 	%endmacro
 	%define dbg_wipe_gprs
+	%define dbg_wipe_fpu_mmxs
+	%define dbg_wipe_xmms
+	%define dbg_wipe_ymms
+	%define dbg_wipe_avx512s
 %endif ; BUILD_DEBUG
 ;endregion Debug
 
@@ -99,28 +201,53 @@ endstruc
 %endmacro
 
 def_Slice Byte
+
+; Usage: stack_slice %1: <type>, %2 <slice id>, %3 <stack_offset>
+; Requires a `stack_offset` variable to be %assign'd to 0 at the start of a scope.
+; The user must then `sub rsp, stack_offset` to allocate the space.
+%macro stack_slice 2
+	%assign stack_offset stack_offset + %1 %+ _size
+	%define %2 (rstack_base_ptr - stack_offset)
+%endmacro
+
+%macro slice_assert 1
+	%if BUILD_DEBUG
+			cmp qword [%1 + Slice.len], nullptr
+			jnz %%.passed
+			int debug_trap
+		%%.passed: ; macro-unique-prefix (%%) .passed is the label name
+			cmp qword [%1 + Slice.len]
+			jg  %%.len_passed
+			int debug_trap
+		%%.len_passed:
+	%endif
+%endmacro
+
+; Usage stac_alloc %1: <stack_offset>
+%macro stack_push 1
+	push rstack_base_ptr
+	mov  rstack_base_ptr, rstack_ptr
+	sub  rstack_ptr, %1
+%endmacro
+%macro stack_pop 0
+	mov rstack_ptr, rstack_base_ptr
+	pop rstack_base_ptr
+%endmacro
 ;endregion Memory
 
 ;region Strings
 def_Slice Str8
 
 ; Usage: lit %1: <slice_label>, %2: <utf-8 literal>
-; Both the struct and the string data are emitted into the current section.
 %macro lit 2
+
   %%str_data: db %2
   %%str_len:  equ $ - %%str_data
   %1:
     istruc Slice_Str8
-        ; Store the ADDRESS of the string data in the ptr field.
         at Slice_Str8.ptr, dq %%str_data
-        ; Store the pre-calculated LENGTH in the len field.
         at Slice_Str8.len, dq %%str_len
     iend
-%endmacro
-
-; Usage: stack_slice %1: <type>, %2 <slice id>
-%macro stack_slice 2
-; Gemini finish this definition for me
 %endmacro
 
 section .lits progbits noexec nowrite
@@ -168,7 +295,8 @@ struc FileOpInfo
 	.content: resb Slice_Byte_size ; gemini is this allowed?
 endstruc
 
-;region api_file_read_contents
+;region file_read_contents
+
 ; Reg allocation:
 ; result:  rcounter   = [FileOpInfo]
 ; path:    Slice_Str8 = { .ptr = rdata, .len = r8 }
@@ -181,9 +309,23 @@ endstruc
 
 section .text
 api_file_read_contents:
+%push proc_scope
+	%assign stack_offset 0
+	stack_slice Slice_Str8, path
+	stack_push  stack_offset
+	; TODO(Ed): We don't have a way of dealing with slices as directly assigned to registers
+	; This forces us to push onto the stack.. (for ergonomics in markup)
+	; See next todo for solution.
+	mov qword [path + Slice_Str8.ptr], path_ptr
+	mov qword [path + Slice_Str8.len], path_len
 	assert_not_null result
-	; slice_assert    path
-	; slice_assert    backing
+
+	; TODO(Ed): Make slice_assert operable...
+	; path would need here a slice_assert_reg path_ptr, path_len
+	; apparently macros support overloading...
+	slice_assert    path
+	; backing can just use regular as r9 as its assumed to be an addr to a struct.
+	slice_assert    backing
 	; local_persist scratch_kilo: [64 * kilo]U8; (api_file_read_contents.scratch_kilo)
 
 		; %define slice_fmem_scratch ;TODO(Ed): figure this out
@@ -194,12 +336,12 @@ api_file_read_contents:
 
 	leave
 	ret
+%pop proc_scope
 
 section .bss
 	api_file_read_contents.scratch_kilo: resb 64 * kilo
 	api_file_read_contents.path_cstr:    resq 1
 %pop api_file_read_contents
-;endregion api_file_read_contents
 
 ; Args: result: [FileOpInfo], path: Slice_Str8, backing: [Slice_Byte]
 %macro file_read_contents 3
@@ -217,7 +359,7 @@ section .bss
 	%pop rdata
 	%pop rcounter
 %endmacro
-
+;endregion file_read_contents
 
 section .text
 global main
@@ -225,27 +367,22 @@ global main
 		; dbg_wipe_gprs
 
 		%push calling
-			%define stack_alloc (Slice_Byte_size)
-			push rstack_base_ptr
-			mov  rstack_base_ptr, rstack_ptr
-			sub  rstack_ptr, -stack_alloc
-
-			%define local_backing (rstack_base_ptr - stack_alloc)
-
+			; Allocate stack for file_read_contents args
+			%assign stack_offset 0
+			stack_slice Slice_Byte, local_backing
+			stack_push  stack_offset
 			mov qword [local_backing + Slice_Byte.ptr], read_mem
 			mov qword [local_backing + Slice_Byte.len], Mem_128k_size
-
+			; Allocate registers with args
 			lea  rcounter, file
 			lea  rdata,   [path_hello_files_asm + Slice.ptr]
 			mov  r8,       path_hello_files_asm + Slice.len
 			lea  r9,      [local_backing]
 		call api_file_read_contents
+			stack_pop
 		%pop calling
 
 		; file_read_contents file, path_hello_files_asm, read_mem
-
-		mov rstack_ptr, rstack_base_ptr
-		pop rstack_base_ptr
 		ret
 
 section .bss
