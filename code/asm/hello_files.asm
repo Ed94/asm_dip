@@ -287,7 +287,7 @@ def_Slice Byte
 ;region Math
 
 ; returns: raccumulator = U64
-; Usage 
+; Usage
 %macro min_S64 2
 	mov   raccumulator, %1
 	cmp   raccumulator, %2
@@ -360,6 +360,15 @@ str8_to_cstr_capped:
 
 ;region WinAPI
 
+%define MS_INVALID_HANDLE_VALUE  -1
+%define MS_FILE_ATTRIBUTE_NORMAL 0x00000080
+%define MS_FILE_SHARE_READ       0x00000001
+%define MS_GENERIC_READ          0x80000000
+%define MS_OPEN_EXISTING         3
+%define MS_STD_OUTPUT_HANDLE     11
+
+%define wapi_shadow_space 32
+
 ; kernel32.lib
 ; Console IO
 extern GetStdHandle
@@ -370,40 +379,58 @@ extern CreateFileA
 extern GetFileSizeEx
 extern GetLastError
 extern ReadFile
+extern WriteFileA
 ; Process API
 extern ExitProcess
 
-%define MS_INVALID_HANDLE_VALUE  -1
-%define MS_FILE_ATTRIBUTE_NORMAL 0x00000080
-%define MS_FILE_SHARE_READ       0x00000001
-%define MS_GENERIC_READ          0x80000000
-%define MS_OPEN_EXISTING         3
-%define MS_STD_OUTPUT_HANDLE     11
+struc wapi_ctbl
+  .shadow: resb 32 ; 32 bytes for RCX, RDX, R8, R9 home
+endstruc
 
-%define wapi_shadow_width 48
-%macro wapi_shadow_space 0
-	push rstack_base_ptr
-	mov  rstack_base_ptr, rstack_ptr
-	sub  rstack_ptr,      wapi_shadow_width
-%endmacro
-%define wapi_arg4_offset 28
-%define wapi_arg5_offset 32
+struc GetStdHandle_ctbl
+	.shadow: resb 32
+endstruc
 
-%define wapi_CreateFileA_dwCreationDisposition 32
-%define wapi_CreateFileA_dwFlagsAndAttributes  40
-%define wapi_CreateFileA_hTemplateFile         48
+; rcx: hConsoleOutput
+; rdx: lpBuffer
+; r8:  nNumberOfCharsToWrite
+; r9:  lpNumberOfCharsWritten
+; s1:  lpReserved
+struc WriteConsoleA_ctbl
+	.shadow:                 resq 4
+  .lpReserved:             resq 1
+	.lpNumberOfCharsWritten: resq 1
+	._pad_:                  resq 1
+endstruc
 
-%define wapi_ReadFile_lpOverlapped 32
+struc CloseHandle_ctbl
+	.shadow: resb 32
+	.
+endstruc
 
-%define wapi_write_console_written_chars r9
-%macro wapi_write_console 2
-		mov rcounter,[%1]        ; Console Handle
-		lea rdata,   [%2]        ; Slice_Str8.Ptr
-		mov r8_32,    %2 %+ _len ; Slice_Str8.Len
-		lea r9,   [rstack_ptr + wapi_arg4_offset]    ; Written chars
-		mov qword [rstack_ptr + wapi_arg5_offset], 0 ; Reserved (must be 0)
-	call WriteConsoleA
-%endmacro
+; r8: dwShareMode
+; r9: lpSecurityAttributes
+; s1: dwCreationDisposition
+; s2: dwFlagsAndAttributes
+; s3: hTemplateFile
+; NOTE: Even though the first two are DWORDs, on the stack they each
+;       occupy a full 8-byte slot in the x64 ABI.
+struc CreateFileA_ctbl
+	.shadow:                resb 32
+  .dwCreationDisposition: resb 8
+  .dwFlagsAndAttributes:  resb 8
+  .hTemplateFile:         resb 8
+endstruc
+
+; rcx: hfile
+; rdx: lpbuffer
+; r8:  nNumberOfBytesToWrite
+; r9:  lpNumberOfBytesWritten
+; s1:  lpOverlapped
+struc WriteFileA_ctbl
+	.shadow:       resb 32
+	.lpOverlapped: resb 8
+endstruc
 
 section .data
 	std_out_hndl dq 0
@@ -474,12 +501,12 @@ file_read_contents:
 	mov r8, [backing                      + Slice_Byte.len]
 	mov r9, [result  + FileOpInfo.content + Slice_Byte.len]
 	assert_cmp jle, r9, r8
-	jg .error_exit
+	jg .error_close_handle
 
 	; MS_BOOL get_size_failed = ! raccumulator
 	; if (get_size_failed) goto .error_exit
 	assert_cmp jne, raccumulator, false
-	je .error_exit
+	je .error_close_handle
 
 	; push r14   ; file_size
 	%define file_size r14d
@@ -502,7 +529,7 @@ file_read_contents:
 	; if (read_failed) goto .error_exit
 	mov r9, qword [result + FileOpInfo.content + Slice_Byte.len]
 	assert_cmp je, file_size, r9d
-	jne .error_exit
+	jne .error_close_handle
 
 	; CloseHandle(id_file)
 	wapi_shadow_space
@@ -514,6 +541,13 @@ file_read_contents:
 	mov raccumulator, [backing + Slice_Byte.ptr]
 	mov [result + FileOpInfo.content + Slice_Byte.ptr], raccumulator
 	jmp .cleanup
+
+.error_close_handle:
+	; CloseHandle(id_file)
+	wapi_shadow_space
+		mov rcounter, rbase
+	call CloseHandle
+	stack_pop
 
 .error_exit:
 		; result = {}
@@ -544,37 +578,36 @@ section .data
 section .text
 global main
 	main:
-		wapi_shadow_space
-	; Setup stdout handle
-		mov rcounter_32, -MS_STD_OUTPUT_HANDLE
+		stack_push GetStdHandle_ctbl_size
+			mov rcounter_32, -MS_STD_OUTPUT_HANDLE
 		call GetStdHandle
-		mov [std_out_hndl], raccumulator
+			mov [std_out_hndl], raccumulator
 		stack_pop
 
 	%push proc_scope
 		; dbg_wipe_gprs
 		%push calling
-			%assign     stack_offset 0
-			stack_slice Slice_Byte, local_backing
-			stack_push  stack_offset                                  ; stack local_backing : Slice_byte
+		%assign     stack_offset 0
+		stack_slice Slice_Byte, local_backing
+		stack_push  stack_offset                                    ; stack local_backing : Slice_byte
 			mov qword [local_backing + Slice_Byte.ptr], read_mem      ; local_backing.ptr = read_mem.ptr
 			mov qword [local_backing + Slice_Byte.len], Mem_128k_size ; local_backing.len = Mem_128k_size
 			lea rcounter, file                                        ; rcounter          = file.ptr
-			mov rdata,   [path_hello_files_asm + Str8.ptr]            ; rdata             = path_hello_files.ptr
-			mov r8,      [path_hello_files_asm + Str8.len]            ; r9                = path_hello_files.len
-			lea r9,      [local_backing]
+			mov rdata, [path_hello_files_asm + Str8.ptr]              ; rdata             = path_hello_files.ptr
+			mov r8,    [path_hello_files_asm + Str8.len]              ; r8                = path_hello_files.len
+			lea r9,    [local_backing]                                ; r9                = & local_backing
 		call file_read_contents                                     ; read_file_contents(rcounter, rdata, r8, r9)
-			stack_pop
+		stack_pop
 		%pop calling
 
-		wapi_shadow_space
-			mov rcounter, [std_out_hndl]
-			lea rdata,    [file + FileOpInfo.content + Slice_Byte.ptr]
-			mov r8_32,    [file + FileOpInfo.content + Slice_Byte.len]
-			lea r9,       [rstack_ptr + wapi_arg4_offset]
-			mov qword [rstack_ptr + wapi_arg5_offset], 0
+		stack_push WriteConsoleA_ctbl_size                                ; frame WriteConoleA
+			mov rcounter, [std_out_hndl]                                    ; rcounter = std_out_hndl
+			lea rdata,    [file + FileOpInfo.content + Slice_Byte.ptr]      ; rdata    = file.content.ptr
+			mov r8_32,    [file + FileOpInfo.content + Slice_Byte.len]      ; r8       = file.content.len
+			lea r9,   [rstack_ptr + WriteFileA_ctbl.lpNumberOfBytesWritten] ; r9       = & stack.ptr[WriteFileA.ctbl.lpNumberOfBytesWritten]
+			mov qword [rstack_ptr + WriteFileA_ctbl.lpReserved], nullptr    ; stack.ptr[.ctbl.lpRserved] = nullptr
 		call WriteConsoleA
-			stack_pop
+		stack_pop
 
 		; Exit program
 		wapi_shadow_space

@@ -79,41 +79,46 @@ breakpoint:
 }
 breakpoint:
 {
-  source_location: "hello_files.asm:444:1"
+  source_location: "hello_files.asm:469:1"
+  hit_count: 0
+}
+breakpoint:
+{
+  source_location: "hello_files.asm:474:1"
+  hit_count: 0
+}
+breakpoint:
+{
+  source_location: "hello_files.asm:494:1"
+  hit_count: 0
+}
+breakpoint:
+{
+  source_location: "hello_files.asm:500:1"
+  hit_count: 0
+}
+breakpoint:
+{
+  source_location: "hello_files.asm:504:1"
+  hit_count: 0
+}
+breakpoint:
+{
+  source_location: "hello_files.asm:516:1"
+  hit_count: 0
+}
+breakpoint:
+{
+  source_location: "hello_files.asm:510:1"
+  hit_count: 0
+}
+breakpoint:
+{
+  source_location: "hello_files.asm:443:1"
   hit_count: 1
 }
 breakpoint:
 {
-  source_location: "hello_files.asm:475:1"
-  hit_count: 1
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:506:1"
-  hit_count: 1
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:501:1"
-  hit_count: 1
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:495:1"
-  hit_count: 1
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:470:1"
-  hit_count: 1
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:456:1"
-  hit_count: 1
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:571:1"
+  source_location: "hello_files.asm:455:1"
   hit_count: 0
 }
