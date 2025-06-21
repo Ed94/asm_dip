@@ -9,9 +9,11 @@ DEFAULT REL ; Use RIP-relative addressing by default
 %define marg
 
 %define rcounter_32     ecx
+%define rdata_32        edx
 %define r8_32           r8d
 
 %define raccumulator    rax
+%define rbase           rbx
 %define rcounter        rcx
 %define rdata           rdx
 %define rdstindex       rdi
@@ -357,7 +359,11 @@ extern ReadFile
 ; Process API
 extern ExitProcess
 
-%define MS_STD_OUTPUT_HANDLE 11
+%define MS_INVALID_HANDLE_VALUE  -1
+%define MS_FILE_ATTRIBUTE_NORMAL 0x00000080  
+%define MS_FILE_SHARE_READ       0x00000001  
+%define MS_GENERIC_READ          0x80000000
+%define MS_STD_OUTPUT_HANDLE     11
 
 %define wapi_shadow_width 48
 %macro wapi_shadow_space 0
@@ -367,6 +373,10 @@ extern ExitProcess
 %endmacro
 %define wapi_arg4_offset 28
 %define wapi_arg5_offset 32
+
+%define wapi_CreateFileA_dwCreationDisposition
+%define wapi_CreateFileA_dwFlagsAndAttributes
+%define wapi_CreateFileA_hTemplateFile
 
 %define wapi_write_console_written_chars r9
 %macro wapi_write_console 2
@@ -403,26 +413,35 @@ file_read_contents:
 	assert_not_null result
 	slice_assert    backing
 	slice_assert    path_ptr, path_len
+	push rbx
+	push r12
+	push r13
+	mov  r12, result
+	mov  r13, backing
 
 	; rcounter = str8_to_cstr_capped(path, slice_fmem(scratch));
-		push rcounter         ; save rcounter
-		push backing          ; save backing
-		mov r9, .scratch       ; r9 = .scratch
-	call str8_to_cstr_capped ; (rcounter, rdata, r8, r9)
-		pop backing
-		pop rcounter
+		push backing           ; save backing
+		all str8_to_cstr_capped ; (rdata, r8, r9)
+	; path_cstr = rcounter; path_len has will be discarded in the CreateFileA call
 
-	wapi_shadow_space
-		mov rcounter, [std_out_hndl]
-		lea rdata,    [.scratch + Slice_Byte.ptr]
-		
-		lea r9, [rstack_ptr + wapi_arg4_offset]    ; Written chars
-		mov qword [rstack_ptr + wapi_arg5_offset], 0 ; Reserved (must be 0)
-	call WriteConsoleA
+		; rcounter = [path_cstr]
+		mov rdata_32, MS_GENERIC_READ    ; dwDesiredAccess      = MS_GENERIC_READ
+		mov r8_32,    MS_FILE_SHARE_READ ; dwShareMode          = MS_FILE_SHARE_READ
+		xor r9, r9                       ; lpSecurityAttributes = nullptr
+		mov dword [rstack_ptr + wapi_CreateFileA_dwCreationDisposition], MS_OPEN_EXISTING
+		mov dword [rstack_ptr + wapi_CreateFileA_dwFlagsAndAttributes ], MS_FILE_ATTRIBUTE_NORMAL
+		mov qword [rstack_ptr + wpai_CreateFileA_hTemplateFile        ], nullptr
+	call CreateFileA
 	stack_pop
-			
-		; TODO(Ed): Form-fill
-	; call CreateFileA
+
+	; B32 open_failed = raccumulator == MS_INVALID_HANDLE_VALUE
+	; if (open_failed) goto %%.error_exit
+	cmp raccumulator, MS_INVALID_HANDLE_VALUE
+	je %%.error_exit
+
+	
+	
+%%.error_exit
 
 	ret
 %pop proc_scope
