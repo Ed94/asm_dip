@@ -113,16 +113,16 @@ DEFAULT REL ; Use RIP-relative addressing by default
     kxorb   k7, k7, k7
 
     ; Wipe ZMM registers (zmm0-zmm31)
-    vpxord  zmm0, zmm0, zmm0
-    vpxord  zmm1, zmm1, zmm1
-    vpxord  zmm2, zmm2, zmm2
-    vpxord  zmm3, zmm3, zmm3
-    vpxord  zmm4, zmm4, zmm4
-    vpxord  zmm5, zmm5, zmm5
-    vpxord  zmm6, zmm6, zmm6
-    vpxord  zmm7, zmm7, zmm7
-    vpxord  zmm8, zmm8, zmm8
-    vpxord  zmm9, zmm9, zmm9
+    vpxord  zmm0,  zmm0,  zmm0
+    vpxord  zmm1,  zmm1,  zmm1
+    vpxord  zmm2,  zmm2,  zmm2
+    vpxord  zmm3,  zmm3,  zmm3
+    vpxord  zmm4,  zmm4,  zmm4
+    vpxord  zmm5,  zmm5,  zmm5
+    vpxord  zmm6,  zmm6,  zmm6
+    vpxord  zmm7,  zmm7,  zmm7
+    vpxord  zmm8,  zmm8,  zmm8
+    vpxord  zmm9,  zmm9,  zmm9
     vpxord  zmm10, zmm10, zmm10
     vpxord  zmm11, zmm11, zmm11
     vpxord  zmm12, zmm12, zmm12
@@ -191,6 +191,18 @@ def_farray Mem_128k, 128 * kilo
 
 ;region memory_copy
 
+; dst = rdstindex = [Byte]
+; src = rsrcindex = [Byte]
+; rcounter        = U64
+section .text
+memory_copy:
+	cld
+	rep movsb ; REPEAT MoveStringByte
+		; 1. Copies the byte from [RSI] to [RDI].
+    ; 2. Increments RSI and RDI (because of CLD).
+    ; 3. Decrements RCX.
+    ; 4. Repeats until RCX is 0.
+	ret
 ;endregion memory_copy
 
 struc Slice
@@ -206,11 +218,6 @@ endstruc
 	endstruc
 %endmacro
 
-
-; struc Slice_Byte
-; 	.ptr: resq 1 (Byte*)
-; 	.len: resq 1 
-; endstruc
 def_Slice Byte
 
 ; Usage: stack_slice %1: <type>, %2 <slice id>, %3 <stack_offset>
@@ -224,7 +231,7 @@ def_Slice Byte
 ; Usage: slice_assert %1: Slice_<type> { .ptr = Slice.ptr, .len = Slice.len }
 %macro slice_assert 1
 	%ifidn BUILD_DEBUG, 1
-			cmp qword [%1 + Slice.len], nullptr
+			cmp qword [%1 + Slice.ptr], nullptr
 			jnz %%.ptr_passed
 			int debug_trap
 		%%.ptr_passed: ; macro-unique-prefix (%%) .passed is the label name
@@ -265,17 +272,20 @@ def_Slice Byte
 
 ; returns: raccumulator = U64
 ; Usage 
-%macro min_U64 2
+%macro min_S64 2
 	mov   raccumulator, %1
 	cmp   raccumulator, %2
 	cmovg raccumulator, %2 ; ConditionalMoveIfGreater
-%endmacro min_U64
+%endmacro min_S64
 
 ;endregion Math
 
 ;region Strings
-def_Slice UTF8
-%define Str8 Slice_UTF8
+struc Str8
+	.ptr: resq 1
+	.len: resq 1
+endstruc
+def_Slice Slice_Str8
 
 ; Usage: lit %1: <slice_label>, %2: <utf-8 literal>
 %macro lit 2
@@ -288,7 +298,7 @@ def_Slice UTF8
     iend
 %endmacro
 
-section .lits progbits noexec nowrite
+section .data
 	lit path_hello_files_asm, `./code/asm/hello_files.asm`
 ;endregion Strings
 
@@ -302,43 +312,33 @@ section .lits progbits noexec nowrite
 %define result      rcounter
 %define content_ptr rdata
 %define content_len r8
-%define mem
+%define mem         r9
 
 section .text
-api_str8_to_cstr_capped:
-	%push raccumulator
-	%push rsrcindex
+str8_to_cstr_capped:
+	push raccumulator
+	push rdstindex
+	push rsrcindex
 	; U64 raccumulator = min(content.len, mem.len - 1);
 		mov rsrcindex, qword [mem + Slice_Byte.len]
 		sub rsrcindex, 1
-		min_U64 content_len, rsrcindex ; raccumulator has result
+	min_S64 content_len, rsrcindex ; raccumulator has result
 	; memory_copy(mem.ptr, content.ptr, copy_len);
-
+		mov rdstindex, qword [mem + Slice_Byte.ptr]
+		mov rsrcindex, content_ptr
+		mov rcounter,  raccumulator
+	call memory_copy
 	; mem.ptr[copy_len] = '\0';
+		mov rdstindex,                       qword [mem + Slice_Byte.ptr]
+		mov byte [rdstindex + raccumulator], 0
 	; return cast(char*, mem.ptr);
-	%pop rsrcindex
-	%pop raccumulator
-	leave
+		mov result, qword [mem + Str8.ptr]
+	pop rsrcindex
+	pop rdstindex
+	pop raccumulator
 	ret
-%pop_proc_scope
-
-; Returns via rcounter
-; Usage: str8_to_cstr_capped content, mem
-%macro str8_to_cstr_capped 2
-	%push rdata
-	%push r8
-	%push r9
-	lea  rdata,    [%2 + Str8.ptr]
-	mov  r8,        %2 + Str8.len
-	leat r9,        %3
-	call api_str8_to_cstr_capped
-	%pop r9
-	%pop r8
-	%pop rdata
-%endmacro
+%pop proc_scope
 ;endregion str8_to_cstr_capped
-
-section .data
 
 ;endregion String Ops
 
@@ -349,10 +349,13 @@ section .data
 extern GetStdHandle
 extern WriteConsoleA
 ; File API
+extern CloseHandle
 extern CreateFileA
 extern GetFileSizeEx
 extern GetLastError
 extern ReadFile
+; Process API
+extern ExitProcess
 
 %define MS_STD_OUTPUT_HANDLE 11
 
@@ -380,7 +383,7 @@ section .data
 ;endregion WinAPI
 
 struc FileOpInfo
-	.content: resb Slice_Byte_size ; gemini is this allowed?
+	.content: resb Slice_Byte_size
 endstruc
 
 ;region file_read_contents
@@ -389,78 +392,84 @@ endstruc
 ; result:  rcounter   = [FileOpInfo]
 ; path:    Slice_Str8 = { .ptr = rdata, .len = r8 }
 ; backing: r9         = [Slice_Byte] 
-%push api_file_read_contents
+%push proc_scope
 %define result   rcounter
 %define path_ptr rdata
 %define path_len r8
 %define backing  r9
 
 section .text
-api_file_read_contents:
-%push proc_scope
+file_read_contents:
 	assert_not_null result
+	slice_assert    backing
+	slice_assert    path_ptr, path_len
 
-	slice_assert backing
-	slice_assert path_ptr, path_len
+	; rcounter = str8_to_cstr_capped(path, slice_fmem(scratch));
+		push rcounter         ; save rcounter
+		push backing          ; save backing
+		mov r9, .scratch       ; r9 = .scratch
+	call str8_to_cstr_capped ; (rcounter, rdata, r8, r9)
+		pop backing
+		pop rcounter
 
-		; %define slice_fmem_scratch ;TODO(Ed): figure this out
-	; call str8_to_cstr_capped path_c_str, path, slice_fmem_scratch
-
+	wapi_shadow_space
+		mov rcounter, [std_out_hndl]
+		lea rdata,    [.scratch + Slice_Byte.ptr]
+		
+		lea r9, [rstack_ptr + wapi_arg4_offset]    ; Written chars
+		mov qword [rstack_ptr + wapi_arg5_offset], 0 ; Reserved (must be 0)
+	call WriteConsoleA
+	stack_pop
+			
 		; TODO(Ed): Form-fill
 	; call CreateFileA
 
-	leave
 	ret
 %pop proc_scope
 
 section .bss
-	api_file_read_contents.scratch_kilo: resb 64 * kilo
-	api_file_read_contents.path_cstr:    resq 1
-%pop api_file_read_contents
-
-; Args: result: [FileOpInfo], path: Str8, backing: [Slice_Byte]
-%macro file_read_contents 3
-	%push rcounter
-	%push rdata
-	%push r8
-	%push r9
-	lea  rcounter, %1
-	lea  rdata,   [%2 + Str8.ptr]
-	mov  r8,       %2 + Str8.len
-	lea  r9,       %3
-	call api_file_read_contents
-	%pop r9
-	%pop r8
-	%pop rdata
-	%pop rcounter
-%endmacro
+	; local_persist raw_scratch : [64 * kilo]byte
+	file_read_contents.raw_scratch: resb 64 * kilo
+	file_read_contents.path_cstr:   resq 1
+section .data
+	; local_persist scratch = fmem_slice(raw_scratch)
+	file_read_contents.scratch:
+		istruc Slice_Byte
+			at Slice_Byte.ptr, dq file_read_contents.raw_scratch
+			at Slice_Byte.len, dq 64 * kilo
+		iend
 ;endregion file_read_contents
 
 section .text
 global main
 	main:
+		wapi_shadow_space
+	; Setup stdout handle
+		mov rcounter_32, -MS_STD_OUTPUT_HANDLE
+		call GetStdHandle
+		mov [std_out_hndl], raccumulator
+
 	%push proc_scope
 		; dbg_wipe_gprs
-
 		%push calling
-			; Allocate stack for file_read_contents args
-			%assign stack_offset 0
+			%assign     stack_offset 0
 			stack_slice Slice_Byte, local_backing
-			stack_push  stack_offset
-			mov qword [local_backing + Slice_Byte.ptr], read_mem
-			mov qword [local_backing + Slice_Byte.len], Mem_128k_size
-			; Allocate registers with args
-			lea  rcounter, file
-			lea  rdata,   [path_hello_files_asm + Str8.ptr]
-			mov  r8,       path_hello_files_asm + Str8.len
-			lea  r9,      [local_backing]
-		call api_file_read_contents
-			stack_pop
+			stack_push  stack_offset                                  ; stack local_backing : Slice_byte
+			mov qword [local_backing + Slice_Byte.ptr], read_mem      ; local_backing.ptr = read_mem.ptr
+			mov qword [local_backing + Slice_Byte.len], Mem_128k_size ; local_backing.len = Mem_128k_size
+			lea rcounter, file                                        ; rcounter          = file.ptr
+			mov rdata,   [path_hello_files_asm + Str8.ptr]            ; rdata             = path_hello_files.ptr
+			mov r8,      [path_hello_files_asm + Str8.len]            ; r9                = path_hello_files.len
+			lea r9,      [local_backing]
+		call file_read_contents                                     ; read_file_contents(rcounter, rdata, r8, r9)
 		%pop calling
 
-		; file_read_contents file, path_hello_files_asm, read_mem
-	%pop proc_scope
+		; Exit program
+		wapi_shadow_space
+		xor     ecx, ecx            ; Exit code 0
+		call    ExitProcess
 		ret
+	%pop proc_scope
 
 section .bss
 read_mem: resb Mem_128k_size
