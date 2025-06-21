@@ -384,7 +384,7 @@ extern WriteFileA
 extern ExitProcess
 
 struc wapi_ctbl
-  .shadow: resb 32 ; 32 bytes for RCX, RDX, R8, R9 home
+  .shadow: resb 32 ; 32 bytes for RCX, RDX, R8, R9
 endstruc
 
 struc GetStdHandle_ctbl
@@ -404,8 +404,8 @@ struc WriteConsoleA_ctbl
 endstruc
 
 struc CloseHandle_ctbl
-	.shadow: resb 32
-	.
+	.shadow: resq 4
+	; .
 endstruc
 
 ; r8: dwShareMode
@@ -578,17 +578,17 @@ section .data
 section .text
 global main
 	main:
-		stack_push GetStdHandle_ctbl_size
-			mov rcounter_32, -MS_STD_OUTPUT_HANDLE
-		call GetStdHandle
-			mov [std_out_hndl], raccumulator
-		stack_pop
-
 	%push proc_scope
+		stack_push GetStdHandle_ctbl_size        ; call-frame GetStdHandle {
+			mov rcounter_32, -MS_STD_OUTPUT_HANDLE ; rcounter.32 = -MS_STD_OUTPUT_HANDLE
+		call GetStdHandle                        ; GetStdHandle <- rcounter, stack
+			mov [std_out_hndl], raccumulator       ; std_out_hndl = raccumulator
+		stack_pop                                ; }
+
 		; dbg_wipe_gprs
-		%push calling
+		%push calling                                               
 		%assign     stack_offset 0
-		stack_slice Slice_Byte, local_backing
+		stack_slice Slice_Byte, local_backing                       ; call-frame file_read_contents {
 		stack_push  stack_offset                                    ; stack local_backing : Slice_byte
 			mov qword [local_backing + Slice_Byte.ptr], read_mem      ; local_backing.ptr = read_mem.ptr
 			mov qword [local_backing + Slice_Byte.len], Mem_128k_size ; local_backing.len = Mem_128k_size
@@ -596,27 +596,26 @@ global main
 			mov rdata, [path_hello_files_asm + Str8.ptr]              ; rdata             = path_hello_files.ptr
 			mov r8,    [path_hello_files_asm + Str8.len]              ; r8                = path_hello_files.len
 			lea r9,    [local_backing]                                ; r9                = & local_backing
-		call file_read_contents                                     ; read_file_contents(rcounter, rdata, r8, r9)
-		stack_pop
+		call file_read_contents                                     ; read_file_contents <- rcounter, rdata, r8, r9, stack
+		stack_pop                                                   ; }
 		%pop calling
 
-		stack_push WriteConsoleA_ctbl_size                                ; frame WriteConoleA
+		stack_push WriteConsoleA_ctbl_size                                ; call-frame WriteConsoleA {
 			mov rcounter, [std_out_hndl]                                    ; rcounter = std_out_hndl
 			lea rdata,    [file + FileOpInfo.content + Slice_Byte.ptr]      ; rdata    = file.content.ptr
 			mov r8_32,    [file + FileOpInfo.content + Slice_Byte.len]      ; r8       = file.content.len
 			lea r9,   [rstack_ptr + WriteFileA_ctbl.lpNumberOfBytesWritten] ; r9       = & stack.ptr[WriteFileA.ctbl.lpNumberOfBytesWritten]
 			mov qword [rstack_ptr + WriteFileA_ctbl.lpReserved], nullptr    ; stack.ptr[.ctbl.lpRserved] = nullptr
-		call WriteConsoleA
-		stack_pop
+		call WriteConsoleA                                                ; WriteConsoleA <- rcounter, rdata, r9, stack 
+		stack_pop                                                         ; }
 
 		; Exit program
-		wapi_shadow_space
-		xor     ecx, ecx    ; Exit code 0
-		call    ExitProcess 
-		ret
+		stack_push ExitProcess_ctbl_size  ; call-frame ExitProcess {
+		xor     ecx, ecx                  ; ecx = 0
+		call    ExitProcess               ; ExitProcess <- rcx, stack
+		ret                               ; }
 	%pop proc_scope
 
 section .bss
-read_mem: resb Mem_128k_size
-
-file: resb FileOpInfo_size
+read_mem: resb Mem_128k_size   ; internal global read_mem: Mem_128k
+file:     resb FileOpInfo_size ; internal global file: FileOpInfo
