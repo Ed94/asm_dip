@@ -11,7 +11,7 @@ DEFAULT REL ; Use RIP-relative addressing by default
 %define rcounter_32     ecx
 %define rdata_32        edx
 %define r8_32           r8d
-%define r9_32
+%define r9_32           r9d
 
 %define raccumulator    rax
 %define rbase           rbx
@@ -374,8 +374,8 @@ extern ReadFile
 extern ExitProcess
 
 %define MS_INVALID_HANDLE_VALUE  -1
-%define MS_FILE_ATTRIBUTE_NORMAL 0x00000080  
-%define MS_FILE_SHARE_READ       0x00000001  
+%define MS_FILE_ATTRIBUTE_NORMAL 0x00000080
+%define MS_FILE_SHARE_READ       0x00000001
 %define MS_GENERIC_READ          0x80000000
 %define MS_OPEN_EXISTING         3
 %define MS_STD_OUTPUT_HANDLE     11
@@ -391,7 +391,7 @@ extern ExitProcess
 
 %define wapi_CreateFileA_dwCreationDisposition 32
 %define wapi_CreateFileA_dwFlagsAndAttributes  40
-%define wpai_CreateFileA_hTemplateFile         48
+%define wapi_CreateFileA_hTemplateFile         48
 
 %define wapi_ReadFile_lpOverlapped 32
 
@@ -418,7 +418,7 @@ endstruc
 ; Reg allocation:
 ; result:  rcounter   = [FileOpInfo]
 ; path:    Slice_Str8 = { .ptr = rdata, .len = r8 }
-; backing: r9         = [Slice_Byte] 
+; backing: r9         = [Slice_Byte]
 %push proc_scope
 %define result   rcounter
 %define path_ptr rdata
@@ -430,17 +430,16 @@ file_read_contents:
 	assert_not_null result
 	slice_assert    backing
 	slice_assert    path_ptr, path_len
-	push rbx
-	push r12
-	push r13
-	push r14
+	push rbase ; id_file
+	push r12   ; result
+	push r13   ; backing
+	push r14   ; file_size
 	mov  r12, result
 	mov  r13, backing
 	%define result  r12
 	%define backing r13
 	; rcounter = str8_to_cstr_capped(path, slice_fmem(scratch));
 		; We're using backing to store the cstr temporarily until ReadFile.
-		; TODO(Ed): This cannot be done with an allocator interface...
 	call str8_to_cstr_capped ; (rdata, r8, r9)
 	; path_cstr = rcounter; path_len has will be discarded in the CreateFileA call
 	%define path_cstr rcounter
@@ -452,54 +451,58 @@ file_read_contents:
 		xor r9, r9                       ; lpSecurityAttributes = nullptr
 		mov dword [rstack_ptr + wapi_CreateFileA_dwCreationDisposition], MS_OPEN_EXISTING
 		mov dword [rstack_ptr + wapi_CreateFileA_dwFlagsAndAttributes ], MS_FILE_ATTRIBUTE_NORMAL
-		mov qword [rstack_ptr + wpai_CreateFileA_hTemplateFile        ], nullptr
+		mov qword [rstack_ptr + wapi_CreateFileA_hTemplateFile        ], nullptr
 	call CreateFileA
 	stack_pop
 
 	; B32 open_failed = raccumulator == MS_INVALID_HANDLE_VALUE
 	; if (open_failed) goto %%.error_exit
-	assert_cmp jnz, raccumulator, MS_INVALID_HANDLE_VALUE
+	assert_cmp jne, raccumulator, MS_INVALID_HANDLE_VALUE
 	je .error_exit
 
 	mov rbase, raccumulator ; rbase = id_file
 	%define id_file rbase
 
 	wapi_shadow_space
-		; rcounter = path_str ; hfile
+		mov rcounter, id_file
 		lea rdata, [result + FileOpInfo.content + Slice_Byte.len]; lpFileSize = result.content.len
 	call GetFileSizeEx
+	stack_pop
 
-	; B32 not_enough_backing = backing.len < result.content.len
+	; B32 not_enough_backing = result.content.len > backing.len
 	; if (not_enough_backing) goto .error_exit
 	mov r8, [backing                      + Slice_Byte.len]
 	mov r9, [result  + FileOpInfo.content + Slice_Byte.len]
-	assert_cmp jg, r9, r8
+	assert_cmp jle, r9, r8
 	jg .error_exit
 
-	; MS_BOOL get_size_failed = rax
+	; MS_BOOL get_size_failed = ! raccumulator
 	; if (get_size_failed) goto .error_exit
-	assert_cmp jnz, raccumulator, false
+	assert_cmp jne, raccumulator, false
 	je .error_exit
 
+	; push r14   ; file_size
 	%define file_size r14d
-	mov  r14d, r9d
+	mov r14d, r9d
 
 	wapi_shadow_space
-		mov rcounter, id_file                                         ; hfile:                 rcounter = rbase
-		mov rdata,    [backing + Slice_Byte.ptr                     ] ; lpBuffer:              rdata    = backing.ptr
-		mov r8_32,    file_size                                       ; nNumberOfBytesRead:    r8_32    = file_size
-		mov r9,       [result  + FileOpInfo.content + Slice_Byte.len] ; lpNumberOfBytesToRead: r9       = & result.content.len
-		mov qword [rstack_ptr + wapi_ReadFile_lpOverlapped], 0        ; lpOverlapped:          nullptr
+		mov rcounter, id_file                                         ; hfile:              rcounter = rbase
+		mov rdata,    [backing + Slice_Byte.ptr                     ] ; lpBuffer:             rdata    = backing.ptr
+		mov r8_32,    file_size                                       ; nNumberOfBytesToRead: r8_32    = file_size
+		lea r9,       [result  + FileOpInfo.content + Slice_Byte.len] ; lpNumberOfBytesRead:  r9       = & result.content.len
+		mov qword [rstack_ptr + wapi_ReadFile_lpOverlapped], 0        ; lpOverlapped:         nullptr
 	call ReadFile
 	stack_pop
 
 	; B32 read_failed  = ! read_result
-	;     read_failed |= amount_read != result.content.len
 	; if (read_failed) goto .error_exit
 	assert_cmp jnz, raccumulator, false
 	je .error_exit
-	assert_cmp je, amount_read, r9
-	je .error_exit
+	;     read_failed |= amount_read != result.content.len
+	; if (read_failed) goto .error_exit
+	mov r9, qword [result + FileOpInfo.content + Slice_Byte.len]
+	assert_cmp je, file_size, r9d
+	jne .error_exit
 
 	; CloseHandle(id_file)
 	wapi_shadow_space
@@ -518,10 +521,10 @@ file_read_contents:
     mov qword [result + FileOpInfo.content + Slice_Byte.len], 0
 
 .cleanup:
-	pop file_size
-	pop result
+	pop r14 ; file_size
 	pop backing
-	pop rbase
+	pop result
+	pop id_file
 	ret
 %pop proc_scope
 
@@ -546,6 +549,7 @@ global main
 		mov rcounter_32, -MS_STD_OUTPUT_HANDLE
 		call GetStdHandle
 		mov [std_out_hndl], raccumulator
+		stack_pop
 
 	%push proc_scope
 		; dbg_wipe_gprs
@@ -560,7 +564,17 @@ global main
 			mov r8,      [path_hello_files_asm + Str8.len]            ; r9                = path_hello_files.len
 			lea r9,      [local_backing]
 		call file_read_contents                                     ; read_file_contents(rcounter, rdata, r8, r9)
+			stack_pop
 		%pop calling
+
+		wapi_shadow_space
+			mov rcounter, [std_out_hndl]
+			lea rdata,    [file + FileOpInfo.content + Slice_Byte.ptr]
+			mov r8_32,    [file + FileOpInfo.content + Slice_Byte.len]
+			lea r9,       [rstack_ptr + wapi_arg4_offset]
+			mov qword [rstack_ptr + wapi_arg5_offset], 0
+		call WriteConsoleA
+			stack_pop
 
 		; Exit program
 		wapi_shadow_space
