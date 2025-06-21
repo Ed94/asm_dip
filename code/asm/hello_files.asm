@@ -14,6 +14,8 @@ DEFAULT REL ; Use RIP-relative addressing by default
 %define raccumulator    rax
 %define rcounter        rcx
 %define rdata           rdx
+%define rdstindex       rdi
+%define rsrcindex       rsi
 %define rstack_ptr      rsp
 %define rstack_base_ptr rbp
 ;endregion DSL
@@ -187,6 +189,10 @@ DEFAULT REL ; Use RIP-relative addressing by default
 
 def_farray Mem_128k, 128 * kilo
 
+;region memory_copy
+
+;endregion memory_copy
+
 struc Slice
 	.ptr: resq 1
 	.len: resq 1
@@ -200,6 +206,11 @@ endstruc
 	endstruc
 %endmacro
 
+
+; struc Slice_Byte
+; 	.ptr: resq 1 (Byte*)
+; 	.len: resq 1 
+; endstruc
 def_Slice Byte
 
 ; Usage: stack_slice %1: <type>, %2 <slice id>, %3 <stack_offset>
@@ -210,16 +221,31 @@ def_Slice Byte
 	%define %2 (rstack_base_ptr - stack_offset)
 %endmacro
 
+; Usage: slice_assert %1: Slice_<type> { .ptr = Slice.ptr, .len = Slice.len }
 %macro slice_assert 1
-	%if BUILD_DEBUG
+	%ifidn BUILD_DEBUG, 1
 			cmp qword [%1 + Slice.len], nullptr
-			jnz %%.passed
+			jnz %%.ptr_passed
 			int debug_trap
-		%%.passed: ; macro-unique-prefix (%%) .passed is the label name
-			cmp qword [%1 + Slice.len]
+		%%.ptr_passed: ; macro-unique-prefix (%%) .passed is the label name
+			cmp qword [%1 + Slice.len], 0
 			jg  %%.len_passed
 			int debug_trap
 		%%.len_passed:
+	%endif
+%endmacro
+
+; Usage slice_assert %1: ptr, %2: len
+%macro slice_assert 2
+	%ifidn BUILD_DEBUG, 1
+		cmp %1, nullptr
+		jnz %%.ptr_passed
+		int debug_trap
+	%%.ptr_passed:
+		cmp %2, 0
+		jg  %%.len_passed
+		int debug_trap
+	%%.len_passed:
 	%endif
 %endmacro
 
@@ -235,24 +261,86 @@ def_Slice Byte
 %endmacro
 ;endregion Memory
 
+;region Math
+
+; returns: raccumulator = U64
+; Usage 
+%macro min_U64 2
+	mov   raccumulator, %1
+	cmp   raccumulator, %2
+	cmovg raccumulator, %2 ; ConditionalMoveIfGreater
+%endmacro min_U64
+
+;endregion Math
+
 ;region Strings
-def_Slice Str8
+def_Slice UTF8
+%define Str8 Slice_UTF8
 
 ; Usage: lit %1: <slice_label>, %2: <utf-8 literal>
 %macro lit 2
-
   %%str_data: db %2
   %%str_len:  equ $ - %%str_data
   %1:
-    istruc Slice_Str8
-        at Slice_Str8.ptr, dq %%str_data
-        at Slice_Str8.len, dq %%str_len
+    istruc Str8
+        at Str8.ptr, dq %%str_data
+        at Str8.len, dq %%str_len
     iend
 %endmacro
 
 section .lits progbits noexec nowrite
 	lit path_hello_files_asm, `./code/asm/hello_files.asm`
 ;endregion Strings
+
+;region String Ops
+
+;region str8_to_cstr_capped
+%push proc_scope
+; result:  rcounter  = [UTF8]
+; content: Str8       = { .ptr = rdata, .len = r8 }
+; mem:     r9         = [Slice_Byte]
+%define result      rcounter
+%define content_ptr rdata
+%define content_len r8
+%define mem
+
+section .text
+api_str8_to_cstr_capped:
+	%push raccumulator
+	%push rsrcindex
+	; U64 raccumulator = min(content.len, mem.len - 1);
+		mov rsrcindex, qword [mem + Slice_Byte.len]
+		sub rsrcindex, 1
+		min_U64 content_len, rsrcindex ; raccumulator has result
+	; memory_copy(mem.ptr, content.ptr, copy_len);
+
+	; mem.ptr[copy_len] = '\0';
+	; return cast(char*, mem.ptr);
+	%pop rsrcindex
+	%pop raccumulator
+	leave
+	ret
+%pop_proc_scope
+
+; Returns via rcounter
+; Usage: str8_to_cstr_capped content, mem
+%macro str8_to_cstr_capped 2
+	%push rdata
+	%push r8
+	%push r9
+	lea  rdata,    [%2 + Str8.ptr]
+	mov  r8,        %2 + Str8.len
+	leat r9,        %3
+	call api_str8_to_cstr_capped
+	%pop r9
+	%pop r8
+	%pop rdata
+%endmacro
+;endregion str8_to_cstr_capped
+
+section .data
+
+;endregion String Ops
 
 ;region WinAPI
 
@@ -310,23 +398,10 @@ endstruc
 section .text
 api_file_read_contents:
 %push proc_scope
-	%assign stack_offset 0
-	stack_slice Slice_Str8, path
-	stack_push  stack_offset
-	; TODO(Ed): We don't have a way of dealing with slices as directly assigned to registers
-	; This forces us to push onto the stack.. (for ergonomics in markup)
-	; See next todo for solution.
-	mov qword [path + Slice_Str8.ptr], path_ptr
-	mov qword [path + Slice_Str8.len], path_len
 	assert_not_null result
 
-	; TODO(Ed): Make slice_assert operable...
-	; path would need here a slice_assert_reg path_ptr, path_len
-	; apparently macros support overloading...
-	slice_assert    path
-	; backing can just use regular as r9 as its assumed to be an addr to a struct.
-	slice_assert    backing
-	; local_persist scratch_kilo: [64 * kilo]U8; (api_file_read_contents.scratch_kilo)
+	slice_assert backing
+	slice_assert path_ptr, path_len
 
 		; %define slice_fmem_scratch ;TODO(Ed): figure this out
 	; call str8_to_cstr_capped path_c_str, path, slice_fmem_scratch
@@ -343,15 +418,15 @@ section .bss
 	api_file_read_contents.path_cstr:    resq 1
 %pop api_file_read_contents
 
-; Args: result: [FileOpInfo], path: Slice_Str8, backing: [Slice_Byte]
+; Args: result: [FileOpInfo], path: Str8, backing: [Slice_Byte]
 %macro file_read_contents 3
 	%push rcounter
 	%push rdata
 	%push r8
 	%push r9
 	lea  rcounter, %1
-	lea  rdata,   [%2 + Slice.ptr]
-	mov  r8,       %2 + Slice.len
+	lea  rdata,   [%2 + Str8.ptr]
+	mov  r8,       %2 + Str8.len
 	lea  r9,       %3
 	call api_file_read_contents
 	%pop r9
@@ -364,6 +439,7 @@ section .bss
 section .text
 global main
 	main:
+	%push proc_scope
 		; dbg_wipe_gprs
 
 		%push calling
@@ -375,14 +451,15 @@ global main
 			mov qword [local_backing + Slice_Byte.len], Mem_128k_size
 			; Allocate registers with args
 			lea  rcounter, file
-			lea  rdata,   [path_hello_files_asm + Slice.ptr]
-			mov  r8,       path_hello_files_asm + Slice.len
+			lea  rdata,   [path_hello_files_asm + Str8.ptr]
+			mov  r8,       path_hello_files_asm + Str8.len
 			lea  r9,      [local_backing]
 		call api_file_read_contents
 			stack_pop
 		%pop calling
 
 		; file_read_contents file, path_hello_files_asm, read_mem
+	%pop proc_scope
 		ret
 
 section .bss
