@@ -11,6 +11,7 @@ DEFAULT REL ; Use RIP-relative addressing by default
 %define rcounter_32     ecx
 %define rdata_32        edx
 %define r8_32           r8d
+%define r9_32
 
 %define raccumulator    rax
 %define rbase           rbx
@@ -20,6 +21,10 @@ DEFAULT REL ; Use RIP-relative addressing by default
 %define rsrc_id         rsi
 %define rstack_ptr      rsp
 %define rstack_base_ptr rbp
+
+%define false         0
+%define true          1
+%define true_overflow 2
 ;endregion DSL
 
 ;region Registers
@@ -53,22 +58,22 @@ DEFAULT REL ; Use RIP-relative addressing by default
 
 ; Wipes the 128-bit XMM registers. Requires a CPU with at least SSE.
 %macro wipe_xmms 0
-    vxorps  xmm0,  xmm0,  xmm0
-    vxorps  xmm1,  xmm1,  xmm1
-    vxorps  xmm2,  xmm2,  xmm2
-    vxorps  xmm3,  xmm3,  xmm3
-    vxorps  xmm4,  xmm4,  xmm4
-    vxorps  xmm5,  xmm5,  xmm5
-    vxorps  xmm6,  xmm6,  xmm6
-    vxorps  xmm7,  xmm7,  xmm7
-    vxorps  xmm8,  xmm8,  xmm8
-    vxorps  xmm9,  xmm9,  xmm9
-    vxorps  xmm10, xmm10, xmm10
-    vxorps  xmm11, xmm11, xmm11
-    vxorps  xmm12, xmm12, xmm12
-    vxorps  xmm13, xmm13, xmm13
-    vxorps  xmm14, xmm14, xmm14
-    vxorps  xmm15, xmm15, xmm15
+  vxorps  xmm0,  xmm0,  xmm0
+  vxorps  xmm1,  xmm1,  xmm1
+  vxorps  xmm2,  xmm2,  xmm2
+  vxorps  xmm3,  xmm3,  xmm3
+  vxorps  xmm4,  xmm4,  xmm4
+  vxorps  xmm5,  xmm5,  xmm5
+  vxorps  xmm6,  xmm6,  xmm6
+  vxorps  xmm7,  xmm7,  xmm7
+  vxorps  xmm8,  xmm8,  xmm8
+  vxorps  xmm9,  xmm9,  xmm9
+  vxorps  xmm10, xmm10, xmm10
+  vxorps  xmm11, xmm11, xmm11
+  vxorps  xmm12, xmm12, xmm12
+  vxorps  xmm13, xmm13, xmm13
+  vxorps  xmm14, xmm14, xmm14
+  vxorps  xmm15, xmm15, xmm15
 %endmacro
 
 ; =============================================================================
@@ -78,23 +83,23 @@ DEFAULT REL ; Use RIP-relative addressing by default
 ; This also wipes the lower 128 bits (the XMM registers), so you don't
 ; need to call WIPE_XMM_REGS if you call this one.
 %macro wipe_ymms 0
-    vzeroupper                ; Clears upper 128 bits of all YMM registers
-    vxorps  ymm0,  ymm0,  ymm0  ; Clears the full YMM0 (including lower XMM0)
-    vxorps  ymm1,  ymm1,  ymm1
-    vxorps  ymm2,  ymm2,  ymm2
-    vxorps  ymm3,  ymm3,  ymm3
-    vxorps  ymm4,  ymm4,  ymm4
-    vxorps  ymm5,  ymm5,  ymm5
-    vxorps  ymm6,  ymm6,  ymm6
-    vxorps  ymm7,  ymm7,  ymm7
-    vxorps  ymm8,  ymm8,  ymm8
-    vxorps  ymm9,  ymm9,  ymm9
-    vxorps  ymm10, ymm10, ymm10
-    vxorps  ymm11, ymm11, ymm11
-    vxorps  ymm12, ymm12, ymm12
-    vxorps  ymm13, ymm13, ymm13
-    vxorps  ymm14, ymm14, ymm14
-    vxorps  ymm15, ymm15, ymm15
+  vzeroupper                ; Clears upper 128 bits of all YMM registers
+  vxorps  ymm0,  ymm0,  ymm0  ; Clears the full YMM0 (including lower XMM0)
+  vxorps  ymm1,  ymm1,  ymm1
+  vxorps  ymm2,  ymm2,  ymm2
+  vxorps  ymm3,  ymm3,  ymm3
+  vxorps  ymm4,  ymm4,  ymm4
+  vxorps  ymm5,  ymm5,  ymm5
+  vxorps  ymm6,  ymm6,  ymm6
+  vxorps  ymm7,  ymm7,  ymm7
+  vxorps  ymm8,  ymm8,  ymm8
+  vxorps  ymm9,  ymm9,  ymm9
+  vxorps  ymm10, ymm10, ymm10
+  vxorps  ymm11, ymm11, ymm11
+  vxorps  ymm12, ymm12, ymm12
+  vxorps  ymm13, ymm13, ymm13
+  vxorps  ymm14, ymm14, ymm14
+  vxorps  ymm15, ymm15, ymm15
 %endmacro
 
 ; =============================================================================
@@ -104,49 +109,49 @@ DEFAULT REL ; Use RIP-relative addressing by default
 ; Requires a CPU with AVX-512F support. This is the most comprehensive
 ; vector register wipe and makes WIPE_XMM_REGS and WIPE_YMM_REGS redundant.
 %macro wipe_avx512s 0
-    ; Wipe Mask Registers (k0-k7)
-    kxorb   k0, k0, k0
-    kxorb   k1, k1, k1
-    kxorb   k2, k2, k2
-    kxorb   k3, k3, k3
-    kxorb   k4, k4, k4
-    kxorb   k5, k5, k5
-    kxorb   k6, k6, k6
-    kxorb   k7, k7, k7
+  ; Wipe Mask Registers (k0-k7)
+  kxorb   k0, k0, k0
+  kxorb   k1, k1, k1
+  kxorb   k2, k2, k2
+  kxorb   k3, k3, k3
+  kxorb   k4, k4, k4
+  kxorb   k5, k5, k5
+  kxorb   k6, k6, k6
+  kxorb   k7, k7, k7
 
-    ; Wipe ZMM registers (zmm0-zmm31)
-    vpxord  zmm0,  zmm0,  zmm0
-    vpxord  zmm1,  zmm1,  zmm1
-    vpxord  zmm2,  zmm2,  zmm2
-    vpxord  zmm3,  zmm3,  zmm3
-    vpxord  zmm4,  zmm4,  zmm4
-    vpxord  zmm5,  zmm5,  zmm5
-    vpxord  zmm6,  zmm6,  zmm6
-    vpxord  zmm7,  zmm7,  zmm7
-    vpxord  zmm8,  zmm8,  zmm8
-    vpxord  zmm9,  zmm9,  zmm9
-    vpxord  zmm10, zmm10, zmm10
-    vpxord  zmm11, zmm11, zmm11
-    vpxord  zmm12, zmm12, zmm12
-    vpxord  zmm13, zmm13, zmm13
-    vpxord  zmm14, zmm14, zmm14
-    vpxord  zmm15, zmm15, zmm15
-    vpxord  zmm16, zmm16, zmm16
-    vpxord  zmm17, zmm17, zmm17
-    vpxord  zmm18, zmm18, zmm18
-    vpxord  zmm19, zmm19, zmm19
-    vpxord  zmm20, zmm20, zmm20
-    vpxord  zmm21, zmm21, zmm21
-    vpxord  zmm22, zmm22, zmm22
-    vpxord  zmm23, zmm23, zmm23
-    vpxord  zmm24, zmm24, zmm24
-    vpxord  zmm25, zmm25, zmm25
-    vpxord  zmm26, zmm26, zmm26
-    vpxord  zmm27, zmm27, zmm27
-    vpxord  zmm28, zmm28, zmm28
-    vpxord  zmm29, zmm29, zmm29
-    vpxord  zmm30, zmm30, zmm30
-    vpxord  zmm31, zmm31, zmm31
+  ; Wipe ZMM registers (zmm0-zmm31)
+  vpxord  zmm0,  zmm0,  zmm0
+  vpxord  zmm1,  zmm1,  zmm1
+  vpxord  zmm2,  zmm2,  zmm2
+  vpxord  zmm3,  zmm3,  zmm3
+  vpxord  zmm4,  zmm4,  zmm4
+  vpxord  zmm5,  zmm5,  zmm5
+  vpxord  zmm6,  zmm6,  zmm6
+  vpxord  zmm7,  zmm7,  zmm7
+  vpxord  zmm8,  zmm8,  zmm8
+  vpxord  zmm9,  zmm9,  zmm9
+  vpxord  zmm10, zmm10, zmm10
+  vpxord  zmm11, zmm11, zmm11
+  vpxord  zmm12, zmm12, zmm12
+  vpxord  zmm13, zmm13, zmm13
+  vpxord  zmm14, zmm14, zmm14
+  vpxord  zmm15, zmm15, zmm15
+  vpxord  zmm16, zmm16, zmm16
+  vpxord  zmm17, zmm17, zmm17
+  vpxord  zmm18, zmm18, zmm18
+  vpxord  zmm19, zmm19, zmm19
+  vpxord  zmm20, zmm20, zmm20
+  vpxord  zmm21, zmm21, zmm21
+  vpxord  zmm22, zmm22, zmm22
+  vpxord  zmm23, zmm23, zmm23
+  vpxord  zmm24, zmm24, zmm24
+  vpxord  zmm25, zmm25, zmm25
+  vpxord  zmm26, zmm26, zmm26
+  vpxord  zmm27, zmm27, zmm27
+  vpxord  zmm28, zmm28, zmm28
+  vpxord  zmm29, zmm29, zmm29
+  vpxord  zmm30, zmm30, zmm30
+  vpxord  zmm31, zmm31, zmm31
 %endmacro
 ;endregion Registers
 
@@ -154,6 +159,12 @@ DEFAULT REL ; Use RIP-relative addressing by default
 %define debug_trap 3
 
 %ifidn BUILD_DEBUG, 1
+	%macro assert_cmp 3
+		cmp %2, %3
+		%1 %%.passed
+		int debug_trap
+	%%.passed:
+	%endmacro
 	%macro assert_not_null 1
 		cmp %1, nullptr
 		jnz %%.passed
@@ -166,6 +177,9 @@ DEFAULT REL ; Use RIP-relative addressing by default
 	%define dbg_wipe_ymms     wipe_ymms
 	%define dbg_wipe_avx512s  wipe_avx512s
 %else
+	%macro assert_cmp 3
+		%cmp %2, %3
+	%endmacro
 	%macro assert_not_null 1
 	%endmacro
 	%macro slice_assert 1
@@ -406,8 +420,8 @@ endstruc
 ; path:    Slice_Str8 = { .ptr = rdata, .len = r8 }
 ; backing: r9         = [Slice_Byte] 
 %push proc_scope
-%define path_ptr rdata
 %define result   rcounter
+%define path_ptr rdata
 %define path_len r8
 %define backing  r9
 
@@ -419,16 +433,20 @@ file_read_contents:
 	push rbx
 	push r12
 	push r13
+	push r14
 	mov  r12, result
 	mov  r13, backing
 	%define result  r12
 	%define backing r13
 	; rcounter = str8_to_cstr_capped(path, slice_fmem(scratch));
+		; We're using backing to store the cstr temporarily until ReadFile.
+		; TODO(Ed): This cannot be done with an allocator interface...
 	call str8_to_cstr_capped ; (rdata, r8, r9)
 	; path_cstr = rcounter; path_len has will be discarded in the CreateFileA call
+	%define path_cstr rcounter
 
 	wapi_shadow_space
-		; rcounter = [path_cstr]
+		; rcounter = path_cstr
 		mov rdata_32, MS_GENERIC_READ    ; dwDesiredAccess      = MS_GENERIC_READ
 		mov r8_32,    MS_FILE_SHARE_READ ; dwShareMode          = MS_FILE_SHARE_READ
 		xor r9, r9                       ; lpSecurityAttributes = nullptr
@@ -440,21 +458,50 @@ file_read_contents:
 
 	; B32 open_failed = raccumulator == MS_INVALID_HANDLE_VALUE
 	; if (open_failed) goto %%.error_exit
-	cmp raccumulator, MS_INVALID_HANDLE_VALUE
+	assert_cmp jnz, raccumulator, MS_INVALID_HANDLE_VALUE
 	je .error_exit
 
 	mov rbase, raccumulator ; rbase = id_file
+	%define id_file rbase
 
 	wapi_shadow_space
-		mov rcounter, rbase                                              ; hfile:               rcounter = rbase
-		mov rdata,       [backing + Slice_Byte.ptr                     ] ; lpBuffer:            rdata    = backing.ptr
-		mov r8_32,       [backing + Slice_Byte.len                     ] ; nNumberOfBytesRead:  r8_32    = backing.len
-		mov r9,          [result  + FileOpInfo.content + Slice_Byte.len] ; lpNumberOfBytesRead: result.content.len = backing.len
-		mov qword [rstack_ptr + wapi_ReadFile_lpOverlapped], 0
+		; rcounter = path_str ; hfile
+		lea rdata, [result + FileOpInfo.content + Slice_Byte.len]; lpFileSize = result.content.len
+	call GetFileSizeEx
+
+	; B32 not_enough_backing = backing.len < result.content.len
+	; if (not_enough_backing) goto .error_exit
+	mov r8, [backing                      + Slice_Byte.len]
+	mov r9, [result  + FileOpInfo.content + Slice_Byte.len]
+	assert_cmp jg, r9, r8
+	jg .error_exit
+
+	; MS_BOOL get_size_failed = rax
+	; if (get_size_failed) goto .error_exit
+	assert_cmp jnz, raccumulator, false
+	je .error_exit
+
+	%define file_size r14d
+	mov  r14d, r9d
+
+	wapi_shadow_space
+		mov rcounter, id_file                                         ; hfile:                 rcounter = rbase
+		mov rdata,    [backing + Slice_Byte.ptr                     ] ; lpBuffer:              rdata    = backing.ptr
+		mov r8_32,    file_size                                       ; nNumberOfBytesRead:    r8_32    = file_size
+		mov r9,       [result  + FileOpInfo.content + Slice_Byte.len] ; lpNumberOfBytesToRead: r9       = & result.content.len
+		mov qword [rstack_ptr + wapi_ReadFile_lpOverlapped], 0        ; lpOverlapped:          nullptr
 	call ReadFile
 	stack_pop
 
-	; Close the handle.
+	; B32 read_failed  = ! read_result
+	;     read_failed |= amount_read != result.content.len
+	; if (read_failed) goto .error_exit
+	assert_cmp jnz, raccumulator, false
+	je .error_exit
+	assert_cmp je, amount_read, r9
+	je .error_exit
+
+	; CloseHandle(id_file)
 	wapi_shadow_space
 		mov rcounter, rbase
 	call CloseHandle
@@ -464,13 +511,14 @@ file_read_contents:
 	mov raccumulator, [backing + Slice_Byte.ptr]
 	mov [result + FileOpInfo.content + Slice_Byte.ptr], raccumulator
 	jmp .cleanup
-	
+
 .error_exit:
 		; result = {}
     mov qword [result + FileOpInfo.content + Slice_Byte.ptr], 0
     mov qword [result + FileOpInfo.content + Slice_Byte.len], 0
 
 .cleanup:
+	pop file_size
 	pop result
 	pop backing
 	pop rbase

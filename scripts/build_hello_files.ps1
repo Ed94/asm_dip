@@ -5,19 +5,27 @@ $path_build     = join-path $path_root      'build'
 $path_code      = join-path $path_root      'code'
 $path_asm       = join-path $path_code      'asm'
 $path_toolchain = join-path $path_root      'toolchain'
-$path_radlink   = join-path $path_toolchain 'radlink'
+$path_rad       = join-path $path_toolchain 'rad'
 
 if ((test-path $path_build) -eq $false) {
 	new-item -itemtype directory -path $path_build
 }
 
-$hello_nasm = join-path $path_asm   'hello_files.asm'
-$listing    = join-path $path_build 'hello_files.list'
-$link_obj   = join-path $path_build 'hello_files.o'
-$exe        = join-path $path_build 'hello_files.exe'
+$unit_name = 'hello_files'
+
+$unit        = join-path $path_asm   "$unit_name.asm"
+$listing     = join-path $path_build "$unit_name.asm.list"
+$link_obj    = join-path $path_build "$unit_name.o"
+$map         = join-path $path_build "$unit_name.map"
+$pdb         = join-path $path_build "$unit_name.pdb"
+$rdi         = join-path $path_build "$unit_name.rdi"
+$rdi_listing = join-path $path_build "$unit_name.rdi.list"
+$exe         = join-path $path_build "$unit_name.exe"
 
 $nasm    = 'nasm'
-$radlink = join-path $path_radlink 'radlink.exe'
+$link    = 'link.exe'
+$radbin  = join-path $path_rad 'radbin.exe'
+$radlink = join-path $path_rad 'radlink.exe'
 
 push-location $path_root
 $f_assemble_only       = '-a'
@@ -36,37 +44,42 @@ $f_optimize_multi_disp = '-Ov'
 $f_outfile             = '-o '
 $f_warnings_as_errors  = '-Werror'
 $args = @(
-	$hello_nasm,
+	$unit,
 	$f_optimize_none,
-	# $f_preprocess_only,
-	# ($f_dmacro + "BUILD_DEBUG 1"),
 	$f_bin_fmt_win64,
 	$f_debug_fmt_win64,
 	($f_listing + $listing),
 	($f_outfile + $link_obj)
 )
+write-host 'Assembling'
 & $nasm $args
 
 $lib_kernel32 = 'kernel32.lib'
 $lib_msvcrt   = 'msvcrt.lib'
 
-$link = 'link.exe'
-
+$link_nologo                 = '/NOLOGO'
 $link_debug                  = '/DEBUG:'
 $link_entrypoint             = '/ENTRY:'
-$link_library                = '/'
+$link_mapfile                = '/MAP:'
+$link_no_incremental 	     = '/INCREMENTAL:NO'
 $link_large_address_aware    = '/LARGEADDRESSAWARE:NO'
+$link_listing                = '/LIST'
 $link_outfile                = '/OUT:'
 $link_win_machine_64         = '/MACHINE:X64'
+$link_win_pdb 		         = '/PDB:'
 $link_win_subsystem_console  = '/SUBSYSTEM:CONSOLE'
 $link_win_subsystem_windows  = '/SUBSYSTEM:WINDOWS'
 $rad_debug                   = '/RAD_DEBUG'
 $rad_debug_name              = '/RAD_DEBUG_NAME:'
 $rad_large_pages             = '/RAD_LARGE_PAGES:'
 $args = @(
-	$link_debug,
 	# $rad_debug,
-	# ($link_debug + 'FULL'),
+	$link_nologo,
+	($link_debug + 'FULL'),
+	($link_mapfile + $map),
+	($link_win_pdb + $pdb),
+	# $link_listing,
+	$link_no_incremental,
 	$link_large_address_aware,
 	$link_win_machine_64,
 	$link_win_subsystem_console,
@@ -76,5 +89,17 @@ $args = @(
 	($link_outfile + $exe),
 	$link_obj
 )
-& $radlink $args
+write-host 'Linking'
+& $link $args
 pop-location
+
+$rbin_out  = '--out:'
+$rbin_dump = '--dump'
+
+write-host 'Dumping RDI'
+$args  = @($pdb, ($rbin_out + $rdi))
+& $radbin $args
+$args = @($rbin_dump, $rdi)
+$dump = & $radbin $args
+$dump > $rdi_listing
+

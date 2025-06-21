@@ -7,9 +7,12 @@ $path_scripts   = join-path $path_root 'scripts'
 $path_source    = join-path $path_root 'source'
 $path_toolchain = join-path $path_root 'toolchain'
 
-$url_yasm = 'https://github.com/yasm/yasm.git'
+# Note: No longer using nasm
+if ($false) {
+	$url_yasm = 'https://github.com/yasm/yasm.git'
 
-$path_yasm    = join-path $path_toolchain 'yasm'
-$path_libyasm = join-path $path_yasm 'libyasm'
+	$path_yasm    = join-path $path_toolchain 'yasm'
+	$path_libyasm = join-path $path_yasm 'libyasm'
 
-clone-gitrepo $path_yasm $url_yasm
+	clone-gitrepo $path_yasm $url_yasm
+}
