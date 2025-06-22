@@ -197,7 +197,7 @@ DEFAULT REL ; Use RIP-relative addressing by default
 %define kilo    1024
 
 ; Usage: def_array <name: %1> <size: %2>
-%macro def_farray 2
+%macro def_farray 2+
 	struc %1
 		.ptr: resb %2
 	endstruc
@@ -269,6 +269,45 @@ def_Slice Byte
 	%endif
 %endmacro
 
+; Usage: cf (call-frame begin)
+; Establishes a new stack frame, saving the caller's frame.
+; This is a standard function prologue.
+%macro cf 0
+	push rstack_base_ptr             ; Save the caller's frame pointer (RBP)
+	mov  rstack_base_ptr, rstack_ptr ; Set our new frame pointer to the current stack position
+%endmacro
+
+; Usage: cf_alloc <size_or_symbol> (call-frame allocate)
+; Immediately allocates a block of memory on the stack.
+%macro cf_alloc 1
+	sub  rstack_ptr, %1       ; Allocate space by subtracting from the stack pointer (RSP)
+%endmacro
+
+; Usage: cf_commit (call-frame commit)
+; Finalizes the stack frame by ensuring it is correctly aligned for a function call.
+%macro cf_commit 0
+	; The Windows x64 ABI requires the stack pointer (RSP) to be 16-byte
+	; aligned immediately before a CALL instruction. This command ensures alignment
+	; by clearing the last 4 bits of RSP, rounding it down to the nearest multiple of 16.
+	and  rstack_ptr, ~15
+%endmacro
+
+; Usage: cf_end (call-frame end)
+; Tears down the stack frame, deallocating all memory and restoring the caller's frame.
+; This is a standard function epilogue.
+%macro cf_end 0
+	; Deallocate the entire frame at once by resetting RSP to the saved RBP
+	mov rstack_ptr, rstack_base_ptr
+	; Restore the caller's frame pointer
+	pop rstack_base_ptr
+%endmacro
+
+%macro cf_ctbl 1
+	cf
+		cf_alloc %1 %+ _ctbl_size
+	cf_commit
+%endmacro
+
 ; Usage stac_alloc %1: <stack_offset>
 %macro stack_push 1
 	push rstack_base_ptr
@@ -278,39 +317,6 @@ def_Slice Byte
 %macro stack_pop 0
 	mov rstack_ptr, rstack_base_ptr
 	pop rstack_base_ptr
-%endmacro
-
-; We will still use R11 as a temporary accumulator.
-
-; Usage: begin_call_prep
-; Initializes the accumulator and reserves 8 bytes in the frame
-; to store the total frame size itself.
-%macro call_frame 0
-	xor     r11, r11          ; Clear the accumulator register to 0
-	add     r11, 8            ; Reserve 8 bytes for the size storage
-%endmacro
-
-; Usage: stack_alloc <size_or_symbol>
-%macro call_frame_alloc 1
-	add r11, %1
-%endmacro
-
-; Usage: commit_call_frame
-%macro call_frame_commit 0
-	add     r11,  15
-	and     r11, ~15
-	; Aligned the total size up to the nearest 16 bytes
-
-	sub     rsp,   r11 ; Allocate the final, aligned block on the stack
-	mov     [rsp], r11 ; Store the total size at the bottom of the frame we just created
-%endmacro
-
-; Usage: end_call
-; Retrieves the size from the stack and deallocates the frame.
-; This macro no longer depends on R11.
-%macro call_frame_end 0
-	mov     r11, [rsp] ; Retrieve the total size from the bottom of our frame
-	add     rsp, r11   ; Deallocate the entire frame
 %endmacro
 
 ;endregion Memory
@@ -366,6 +372,7 @@ str8_to_cstr_capped:
 	push raccumulator
 	push rdst_id
 	push rsrc_id
+	sub  rstack_ptr, 8
 	; U64 raccumulator = min(content.len, mem.len - 1);
 		mov rsrc_id, qword [mem + Slice_Byte.len]
 		sub rsrc_id, 1
@@ -380,6 +387,7 @@ str8_to_cstr_capped:
 		mov byte [rdst_id + raccumulator], 0
 	; return cast(char*, mem.ptr);
 		mov result, qword [mem + Str8.ptr]
+	add rstack_ptr, 8
 	pop rsrc_id
 	pop rdst_id
 	pop raccumulator
@@ -447,7 +455,6 @@ struc CreateFileA_ctbl
 	.dwCreationDisposition: resq 1
 	.dwFlagsAndAttributes:  resq 1
 	.hTemplateFile:         resq 1
-	._pad                   resq 1
 endstruc
 
 ; rcx: hFile
@@ -523,7 +530,6 @@ file_read_contents:
 	push r12   ; result
 	push r13   ; backing
 	push r14   ; file_size
-	sub  rsp, 8
 	mov  r12, result
 	mov  r13, backing
 	%define result  r12
@@ -535,16 +541,16 @@ file_read_contents:
 	; path_cstr = rcounter; path_len has will be discarded in the CreateFileA call
 	%define path_cstr rcounter
 
-	stack_push CreateFileA_ctbl_size ; call-frame CreateFileA {
+	cf_ctbl CreateFileA                ; call-frame CreateFileA {
 		;                                  rcounter             = path_cstr           
 		mov rdata_32, MS_GENERIC_READ    ; dwDesiredAccess      = MS_GENERIC_READ
 		mov r8_32,    MS_FILE_SHARE_READ ; dwShareMode          = MS_FILE_SHARE_READ
 		xor r9, r9                       ; lpSecurityAttributes = nullptr
-		mov dword [rstack_ptr + CreateFileA_ctbl.dwCreationDisposition], MS_OPEN_EXISTING         ; stack.ptr[.dwCreationDisposition] = MS_OPEN_EXISTING
-		mov dword [rstack_ptr + CreateFileA_ctbl.dwFlagsAndAttributes ], MS_FILE_ATTRIBUTE_NORMAL ; stack.ptr[.dwFlagsAndAttributes ] = MS_FILE_ATTRIBUTE_NORMAL
+		mov qword [rstack_ptr + CreateFileA_ctbl.dwCreationDisposition], MS_OPEN_EXISTING         ; stack.ptr[.dwCreationDisposition] = MS_OPEN_EXISTING
+		mov qword [rstack_ptr + CreateFileA_ctbl.dwFlagsAndAttributes ], MS_FILE_ATTRIBUTE_NORMAL ; stack.ptr[.dwFlagsAndAttributes ] = MS_FILE_ATTRIBUTE_NORMAL
 		mov qword [rstack_ptr + CreateFileA_ctbl.hTemplateFile        ], nullptr                  ; stack.ptr[.hTemplateFile        ] = nullptr
-	call CreateFileA ; CreateFileA <- rcounter, rdata, r8, r9, stack
-	stack_pop        ; }
+		call CreateFileA ; CreateFileA <- rcounter, rdata, r8, r9, stack
+	cf_end             ; }
 
 	; B32 open_failed = raccumulator == MS_INVALID_HANDLE_VALUE
 	; if (open_failed) goto %%.error_exit
@@ -554,11 +560,11 @@ file_read_contents:
 	mov rbase, raccumulator ; rbase = id_file
 	%define id_file rbase
 
-	stack_push GetFileSizeEx_ctbl_size                          ; call-frame GetFileSizeEx {
+	cf_ctbl GetFileSizeEx                                       ; call-frame GetFileSizeEx {
 		mov rcounter, id_file                                     ; rcounter = id_file
 		lea rdata, [result + FileOpInfo.content + Slice_Byte.len] ; lpFileSize = result.content.len
-	call GetFileSizeEx                                          ; GetFileSizeEx <- rcounter, rdata, stack
-	stack_pop                                                   ; }
+		call GetFileSizeEx                                        ; GetFileSizeEx <- rcounter, rdata, stack
+	cf_end                                                      ; }
 
 	; B32 not_enough_backing = result.content.len > backing.len
 	; if (not_enough_backing) goto .error_close_handle
@@ -575,14 +581,14 @@ file_read_contents:
 	%define file_size r14d
 	mov r14d, r9d
 
-	stack_push ReadFile_ctbl_size                                   ; call-frame ReadFile {
+	cf_ctbl ReadFile                                                ; call-frame ReadFile {
 		mov rcounter, id_file                                         ; hfile:              rcounter = rbase
 		mov rdata,    [backing + Slice_Byte.ptr                     ] ; lpBuffer:             rdata    = backing.ptr
 		mov r8_32,    file_size                                       ; nNumberOfBytesToRead: r8_32    = file_size
 		lea r9,       [result  + FileOpInfo.content + Slice_Byte.len] ; lpNumberOfBytesRead:  r9       = & result.content.len
 		mov qword [rstack_ptr + ReadFile_ctbl.lpOverlapped], 0        ; lpOverlapped:         nullptr
-	call ReadFile                                                   ; ReadFile <- rcounter, rata, r8, r9, stack
-	stack_pop                                                       ; }
+		call ReadFile                                                 ; ReadFile <- rcounter, rata, r8, r9, stack
+	cf_end                                                          ; }
 
 	; B32 read_failed  = ! read_result
 	; if (read_failed) goto .error_exit
@@ -595,10 +601,10 @@ file_read_contents:
 	jne .error_close_handle
 
 	; CloseHandle(id_file)
-	stack_push CloseHandle_ctbl_size ; call-frame CloseHandle {
-		mov rcounter, id_file          ; rcounter = id_file (rbase)
-	call CloseHandle                 ; CloseHandle <- rcounter, stack
-	stack_pop                        ; }
+	cf_ctbl CloseHandle     ; call-frame CloseHandle {
+		mov rcounter, id_file ; rcounter = id_file (rbase)
+		call CloseHandle      ; CloseHandle <- rcounter, stack
+	cf_end                  ; }
 
 	; reslt.content.ptr = raccumulator
 	mov raccumulator, [backing + Slice_Byte.ptr]                     ; raccumulator       = backing.ptr
@@ -606,10 +612,10 @@ file_read_contents:
 	jmp .cleanup                                                     ; goto .cleanup
 
 .error_close_handle:
-	stack_push CloseHandle_ctbl_size ; call-frame CloseHandle {
-		mov rcounter, rbase            ; rcounter = id_file (rbase)
-	call CloseHandle                 ; CloseHandle <- rcounter, stack
-	stack_pop                        ; }
+	cf_ctbl CloseHandle   ; call-frame CloseHandle {
+		mov rcounter, rbase ; rcounter = id_file (rbase)
+		call CloseHandle    ; CloseHandle <- rcounter, stack
+	cf_end                ; }
 
 .error_exit:
 		; result = {}
@@ -617,7 +623,6 @@ file_read_contents:
     mov qword [result + FileOpInfo.content + Slice_Byte.len], 0
 
 .cleanup:
-	add rsp, 8
 	pop r14 ; file_size
 	pop backing
 	pop result
@@ -643,17 +648,19 @@ section .text
 global main
 %push proc_scope
 	main:
-		stack_push GetStdHandle_ctbl_size        ; call-frame GetStdHandle {
-			mov rcounter_32, MS_STD_OUTPUT_HANDLE  ; rcounter.32 = MS_STD_OUTPUT_HANDLE
-		call GetStdHandle                        ; GetStdHandle <- rcounter, stack
-			mov [std_out_hndl], raccumulator       ; std_out_hndl = raccumulator
-		stack_pop                                ; }
+		xor rcx, rcx
 
-		; dbg_wipe_gprs
+		cf_ctbl GetStdHandle                    ; call-frame GetStdHandle {
+			mov rcounter_32, MS_STD_OUTPUT_HANDLE ; rcounter.32 = MS_STD_OUTPUT_HANDLE
+			call GetStdHandle                     ; GetStdHandle <- rcounter, stack
+		cf_end                                  ; }
+
+		mov [std_out_hndl], raccumulator ; std_out_hndl = raccumulator
+
 		%push calling
-		call_frame 
-			call_frame_alloc Slice_Byte_size                          ; stack local_backing : Slice_byte
-		call_frame_commit                                           ; call-frame file_read_contents {
+		cf                                                          ; call-frame file_read_contents {
+			cf_alloc Slice_Byte_size                                  ; stack local_backing : Slice_byte
+		cf_commit                                                   
 			%define local_backing rsp + Slice_Byte_size
 			mov qword [local_backing + Slice_Byte.ptr], read_mem      ; local_backing.ptr = read_mem.ptr
 			mov qword [local_backing + Slice_Byte.len], Mem_128k_size ; local_backing.len = Mem_128k_size
@@ -661,24 +668,25 @@ global main
 			mov rdata, [path_hello_files_asm + Str8.ptr]              ; rdata             = path_hello_files.ptr
 			mov r8,    [path_hello_files_asm + Str8.len]              ; r8                = path_hello_files.len
 			lea r9,    [local_backing]                                ; r9                = & local_backing
-		call file_read_contents                                     ; read_file_contents <- rcounter, rdata, r8, r9, stack
-		call_frame_end                                              ; }
+			call file_read_contents                                   ; read_file_contents <- rcounter, rdata, r8, r9, stack
+		cf_end                                                      ; }
 		%pop calling
 
-		stack_push WriteConsoleA_ctbl_size                                   ; call-frame WriteConsoleA {
+		cf_ctbl WriteConsoleA                                                ; call-frame WriteConsoleA {
 			mov rcounter, [std_out_hndl]                                       ; rcounter = std_out_hndl
 			mov rdata,    [file + FileOpInfo.content + Slice_Byte.ptr]         ; rdata    = file.content.ptr
 			mov r8_32,    [file + FileOpInfo.content + Slice_Byte.len]         ; r8       = file.content.len
 			lea r9,   [rstack_ptr + WriteConsoleA_ctbl.lpNumberOfCharsWritten] ; r9       = & stack.ptr[WriteFileA.ctbl.lpNumberOfCharsWritten]
 			mov qword [rstack_ptr + WriteConsoleA_ctbl.lpReserved], nullptr    ; stack.ptr[.ctbl.lpRserved] = nullptr
-		call WriteConsoleA                                                   ; WriteConsoleA <- rcounter, rdata, r9, stack 
-		stack_pop                                                            ; }
+			call WriteConsoleA                                                 ; WriteConsoleA <- rcounter, rdata, r9, stack 
+		cf_end
 
 		; Exit program
-		stack_push ExitProcess_ctbl_size  ; call-frame ExitProcess {
-		xor     ecx, ecx                  ; ecx = 0
-		call    ExitProcess               ; ExitProcess <- rcx, stack
-		ret                               ; } // Technically doesn't occur but here for "correctness"
+		cf_ctbl ExitProcess   ; call-frame ExitProcess {
+			xor     ecx, ecx    ; ecx = 0
+			call    ExitProcess ; ExitProcess <- rcx, stack
+		cf_end                ; }
+		ret                 
 %pop proc_scope
 
 section .bss

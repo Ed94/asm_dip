@@ -1,96 +1,12 @@
 // raddbg 0.9.18 project file
 
 recent_file: path: "hello_files.asm"
-recent_file: path: "../../build/hello_files.unit.asm"
-recent_file: path: "../../asm_dip/code/asm/hello_files.asm"
 recent_file: path: "../../../code/asm/hello_files.asm"
-recent_file: path: "../../../WATL_Exercise/c/watl.v0.msvc.c"
-recent_file: path: "asm/hello_files.asm"
-recent_file: path: "../hello_files.asm"
-recent_file: path: "hello_slices.asm"
-recent_file: path: "hello_nasm.asm"
-recent_file: path: "../asm"
-recent_file: path: "../../../../dev/raddbg/minkernel/crts/ucrt/src/appcrt/startup/abort.cpp"
-recent_file: path: "../../../vefontcache-odin/backend/sokol/backend_sokol.odin"
-recent_file: path: "../../../vefontcache-odin/examples/sokol_demo/sokol_demo.odin"
-recent_file: path: "../../../vefontcache-odin/thirdparty/sokol/c/sokol_gfx.h"
-recent_file: path: "../../../vefontcache-odin/thirdparty/sokol/c/sokol_log.h"
-recent_file: path: "../../../vefontcache-odin/thirdparty/sokol/c/sokol_app.h"
-recent_file: path: "D:/a/_work/1/s/src/vctools/crt/vcruntime/src/string/amd64/memcpy.asm"
-recent_file: path: "D:/a/_work/1/s/src/vctools/crt/vcruntime/src/string/amd64/memset.asm"
-breakpoint:
-{
-  source_location: "../../../vefontcache-odin/backend/sokol/backend_sokol.odin:66:1"
-  hit_count: 0
-}
-target:
-{
-  executable: "../../../WATL_Exercise/build/watl.v0.msvc.exe"
-  working_directory: "../../../WATL_Exercise/C"
-}
-type_view:
-{
-  type: Slice_A2_Str8
-  expr: "$.slice()"
-}
-type_view:
-{
-  type: Slice_UTF8
-  expr: "array($.ptr, $.len)"
-}
-type_view:
-{
-  type: Slice_WATL_Node
-  expr: "array($.ptr, $.len)"
-}
-type_view:
-{
-  type: Slice_WATL_Tok
-  expr: "slice($)"
-}
-type_view:
-{
-  type: Slice_KT1CX_Cell_Str8
-  expr: "slice($)"
-}
-type_view:
-{
-  type: Slice_KT1L_Slot_Str8
-  expr: "slice($)"
-}
-target:
-{
-  executable: "../../build/hello_nasm.exe"
-  working_directory: "../../build"
-}
-target:
-{
-  executable: "../../build/hello_slices.exe"
-  working_directory: "../../build"
-}
+recent_file: path: "../../../../Users/Ed/AppData/Roaming/raddbg/default.raddbg_project/recent_file"
+recent_file: path: "../../../../Users/Ed/AppData/Roaming/raddbg/default.raddbg_project/recent_file"
 target:
 {
   executable: "../../build/hello_files.exe"
-  enabled: 1
   working_directory: "../../../asm_dip"
-}
-breakpoint:
-{
-  source_location: "hello_slices.asm:60:1"
-  hit_count: 0
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:674:1"
-  hit_count: 1
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:584:1"
-  hit_count: 1
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:605:1"
-  hit_count: 1
+  enabled: 1
 }
