@@ -291,15 +291,16 @@ def_Slice Byte
 ; Usage: cf_end (call-frame end)
 ; Tears down the stack frame, deallocating all memory and restoring the caller's frame.
 %macro cf_end 0
-	; Deallocate the entire frame at once by resetting RSP to the saved RBP
-	mov rstack_ptr, rstack_base_ptr
-	; Restore the caller's frame pointer
-	pop rstack_base_ptr
+	mov rstack_ptr, rstack_base_ptr ; Deallocate the entire frame at once by resetting RSP to the saved RBP
+	pop rstack_base_ptr             ; Restore the caller's frame pointer
 %endmacro
+; Usage: cf_ctbl <ctbl struc>
+; Meant to only be used with call-table structs: <Symbol>_ctbl naming convention
 %macro cf_ctbl 1
-	cf
-		cf_alloc %1 %+ _ctbl_size
-	cf_commit
+	push rstack_base_ptr
+	mov  rstack_base_ptr, rstack_ptr
+	sub  rstack_ptr, %1 %+ _ctbl_size
+	and  rstack_ptr, ~15
 %endmacro
 
 ; Usage stac_alloc %1: <stack_offset>
