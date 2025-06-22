@@ -35,6 +35,7 @@ $f_debug_fmt_win64     = '-g cv8'
 $f_dmacro              = '-Dmacro='
 $f_Ipath               = '-Ipath '
 $f_listing             = '-l'
+$f_listing_plus        = '-L+'
 $f_preprocess_only     = '-E'
 $f_optimize_none       = '-O0'
 $f_optimize_min        = '-O1'
@@ -42,15 +43,26 @@ $f_optimize_multi      = '-Ox'
 $f_optimize_multi_disp = '-Ov'
 $f_outfile             = '-o '
 $f_warnings_as_errors  = '-Werror'
+
+write-host 'Preprocessing'
 $args = @(
 	$unit,
+	$f_preprocess_only,
+	$f_optimize_none,
+	($f_listing + $listing),
+	$f_listing_plus
+)
+& $nasm $args
+
+write-host 'Assembling'
+$args = @(
+	$unit,
+	$f_preprocess_only,
 	$f_optimize_none,
 	$f_bin_fmt_win64,
 	$f_debug_fmt_win64,
-	($f_listing + $listing),
 	($f_outfile + $link_obj)
 )
-write-host 'Assembling'
 & $nasm $args
 
 $lib_kernel32 = 'kernel32.lib'

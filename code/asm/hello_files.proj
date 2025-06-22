@@ -1,6 +1,8 @@
 // raddbg 0.9.18 project file
 
 recent_file: path: "hello_files.asm"
+recent_file: path: "../../build/hello_files.unit.asm"
+recent_file: path: "../../asm_dip/code/asm/hello_files.asm"
 recent_file: path: "../../../code/asm/hello_files.asm"
 recent_file: path: "../../../WATL_Exercise/c/watl.v0.msvc.c"
 recent_file: path: "asm/hello_files.asm"
@@ -69,8 +71,8 @@ target:
 target:
 {
   executable: "../../build/hello_files.exe"
-  working_directory: ../../
   enabled: 1
+  working_directory: "../../../asm_dip"
 }
 breakpoint:
 {
@@ -115,7 +117,7 @@ breakpoint:
 breakpoint:
 {
   source_location: "hello_files.asm:443:1"
-  hit_count: 1
+  hit_count: 0
 }
 breakpoint:
 {

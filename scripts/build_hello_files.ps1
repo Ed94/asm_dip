@@ -13,7 +13,8 @@ if ((test-path $path_build) -eq $false) {
 
 $unit_name = 'hello_files'
 
-$unit        = join-path $path_asm   "$unit_name.asm"
+$src         = join-path $path_asm   "$unit_name.asm"
+$unit        = join-path $path_build "$unit_name.unit.asm"
 $listing     = join-path $path_build "$unit_name.asm.list"
 $link_obj    = join-path $path_build "$unit_name.o"
 $map         = join-path $path_build "$unit_name.map"
@@ -36,6 +37,7 @@ $f_debug_fmt_win64     = '-g cv8'
 $f_dmacro              = '-Dmacro='
 $f_Ipath               = '-Ipath '
 $f_listing             = '-l'
+$f_listing_plus        = '-L+'
 $f_preprocess_only     = '-E'
 $f_optimize_none       = '-O0'
 $f_optimize_min        = '-O1'
@@ -43,16 +45,29 @@ $f_optimize_multi      = '-Ox'
 $f_optimize_multi_disp = '-Ov'
 $f_outfile             = '-o '
 $f_warnings_as_errors  = '-Werror'
-$args = @(
-	$unit,
+
+# $nargs = @(
+# 	$src,
+# 	$f_preprocess_only,
+# 	$f_optimize_none,
+# 	($f_outfile + $unit)
+# )
+# write-host 'Preprocessing'
+# $nargs | ForEach-Object { Write-Host $_ }
+# & $nasm $nargs
+
+$nargs = @(
+	$src,
 	$f_optimize_none,
 	$f_bin_fmt_win64,
 	$f_debug_fmt_win64,
+	$f_listing_plus,
 	($f_listing + $listing),
 	($f_outfile + $link_obj)
 )
 write-host 'Assembling'
-& $nasm $args
+$nargs | ForEach-Object { Write-Host "`t$_" }
+& $nasm $nargs
 
 $lib_kernel32 = 'kernel32.lib'
 $lib_msvcrt   = 'msvcrt.lib'
@@ -72,7 +87,7 @@ $link_win_subsystem_windows  = '/SUBSYSTEM:WINDOWS'
 $rad_debug                   = '/RAD_DEBUG'
 $rad_debug_name              = '/RAD_DEBUG_NAME:'
 $rad_large_pages             = '/RAD_LARGE_PAGES:'
-$args = @(
+$nargs = @(
 	# $rad_debug,
 	$link_nologo,
 	($link_debug + 'FULL'),
@@ -90,16 +105,16 @@ $args = @(
 	$link_obj
 )
 write-host 'Linking'
-& $link $args
+$nargs | ForEach-Object { Write-Host "`t$_" }
+& $link $nargs
 pop-location
 
 $rbin_out  = '--out:'
 $rbin_dump = '--dump'
 
 write-host 'Dumping RDI'
-$args  = @($pdb, ($rbin_out + $rdi))
-& $radbin $args
-$args = @($rbin_dump, $rdi)
-$dump = & $radbin $args
+$nargs  = @($pdb, ($rbin_out + $rdi))
+& $radbin $nargs
+$nargs = @($rbin_dump, $rdi)
+$dump = & $radbin $nargs
 $dump > $rdi_listing
-

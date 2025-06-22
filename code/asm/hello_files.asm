@@ -194,10 +194,10 @@ DEFAULT REL ; Use RIP-relative addressing by default
 
 ;region Memory
 %define nullptr 0
-%define kilo 1024
+%define kilo    1024
 
 ; Usage: def_array <name: %1> <size: %2>
-%macro def_farray 2+
+%macro def_farray 2
 	struc %1
 		.ptr: resb %2
 	endstruc
@@ -237,11 +237,8 @@ endstruc
 def_Slice Byte
 
 ; Usage: stack_slice %1: <type>, %2 <slice id>, %3 <stack_offset>
-; Requires a `stack_offset` variable to be %assign'd to 0 at the start of a scope.
-; The user must then `sub rsp, stack_offset` to allocate the space.
 %macro stack_slice 2
-	%assign stack_offset stack_offset + %1 %+ _size
-	%define %2 (rstack_base_ptr - stack_offset)
+	call_frame_alloc %1 %+ _size
 %endmacro
 
 ; Usage: slice_assert %1: Slice_<type> { .ptr = Slice.ptr, .len = Slice.len }
@@ -282,6 +279,40 @@ def_Slice Byte
 	mov rstack_ptr, rstack_base_ptr
 	pop rstack_base_ptr
 %endmacro
+
+; We will still use R11 as a temporary accumulator.
+
+; Usage: begin_call_prep
+; Initializes the accumulator and reserves 8 bytes in the frame
+; to store the total frame size itself.
+%macro call_frame 0
+	xor     r11, r11          ; Clear the accumulator register to 0
+	add     r11, 8            ; Reserve 8 bytes for the size storage
+%endmacro
+
+; Usage: stack_alloc <size_or_symbol>
+%macro call_frame_alloc 1
+	add r11, %1
+%endmacro
+
+; Usage: commit_call_frame
+%macro call_frame_commit 0
+	add     r11,  15
+	and     r11, ~15
+	; Aligned the total size up to the nearest 16 bytes
+
+	sub     rsp,   r11 ; Allocate the final, aligned block on the stack
+	mov     [rsp], r11 ; Store the total size at the bottom of the frame we just created
+%endmacro
+
+; Usage: end_call
+; Retrieves the size from the stack and deallocates the frame.
+; This macro no longer depends on R11.
+%macro call_frame_end 0
+	mov     r11, [rsp] ; Retrieve the total size from the bottom of our frame
+	add     rsp, r11   ; Deallocate the entire frame
+%endmacro
+
 ;endregion Memory
 
 ;region Math
@@ -365,28 +396,92 @@ str8_to_cstr_capped:
 %define MS_FILE_SHARE_READ       0x00000001
 %define MS_GENERIC_READ          0x80000000
 %define MS_OPEN_EXISTING         3
-%define MS_STD_OUTPUT_HANDLE     11
+%define MS_STD_OUTPUT_HANDLE     -11
 
 %define wapi_shadow_space 32
 
 ; kernel32.lib
+; Process API
+extern CloseHandle
+extern ExitProcess
+extern GetLastError
+; File API
+extern CreateFileA
+extern GetFileSizeEx
+extern ReadFile
+extern WriteFileA
 ; Console IO
 extern GetStdHandle
 extern WriteConsoleA
-; File API
-extern CloseHandle
-extern CreateFileA
-extern GetFileSizeEx
-extern GetLastError
-extern ReadFile
-extern WriteFileA
-; Process API
-extern ExitProcess
 
 struc wapi_ctbl
   .shadow: resb 32 ; 32 bytes for RCX, RDX, R8, R9
 endstruc
 
+; rcx: hObject
+struc CloseHandle_ctbl
+	.shadow: resq 4
+endstruc
+
+; rcx: uExitCode
+struc ExitProcess_ctbl
+	.shadow: resq 4
+endstruc
+
+; no args
+struc GetLastError_ctbl
+	.shadow: resq 4
+endstruc
+
+; rcx: lpFileName
+; rdx: dwDesiredAccess
+; r8:  dwShareMode
+; r9:  lpSecurityAttributes
+; s1:  dwCreationDisposition
+; s2:  dwFlagsAndAttributes
+; s3:  hTemplateFile
+; NOTE: Even though the first two are DWORDs, on the stack they each
+;       occupy a full 8-byte slot in the x64 ABI.
+struc CreateFileA_ctbl
+	.shadow:                resb 32
+  .dwCreationDisposition: resb 8
+  .dwFlagsAndAttributes:  resb 8
+  .hTemplateFile:         resb 8
+endstruc
+
+; rcx: hFile
+; rdx: lpFileSize
+struc GetFileSizeEx_ctbl
+	.shadow: resq 4
+endstruc
+
+; rcx: hFile
+; rdx: lpBuffer
+; r8:  nNumberOfBytesToRead
+; r9:  lpNumberOfBytesRead
+; s1:  lpOverlapped
+struc ReadFile_ctbl
+	.shadow:       resq 4
+	.lpOverlapped: resq 1
+	._pad:         resq 1 ; 8 bytes padding for 16-byte stack alignment
+endstruc
+
+; rcx: hFile
+; rdx: lpBuffer
+; r8:  nNumberOfBytesToWrite
+; r9:  lpNumberOfBytesWritten
+; s1:  lpOverlapped
+struc WriteFileA_ctbl
+	.shadow:       resq 4
+	.lpOverlapped: resq 1
+	._pad:         resq 1 ; 8 bytes padding for 16-byte stack alignment
+endstruc
+
+struc FileOpInfo
+	.content: resb Slice_Byte_size
+endstruc
+
+; rcx: nStdHandle
 struc GetStdHandle_ctbl
 	.shadow: resb 32
 endstruc
@@ -400,53 +495,18 @@ struc WriteConsoleA_ctbl
 	.shadow:                 resq 4
   .lpReserved:             resq 1
 	.lpNumberOfCharsWritten: resq 1
-	._pad_:                  resq 1
-endstruc
-
-struc CloseHandle_ctbl
-	.shadow: resq 4
-	; .
-endstruc
-
-; r8: dwShareMode
-; r9: lpSecurityAttributes
-; s1: dwCreationDisposition
-; s2: dwFlagsAndAttributes
-; s3: hTemplateFile
-; NOTE: Even though the first two are DWORDs, on the stack they each
-;       occupy a full 8-byte slot in the x64 ABI.
-struc CreateFileA_ctbl
-	.shadow:                resb 32
-  .dwCreationDisposition: resb 8
-  .dwFlagsAndAttributes:  resb 8
-  .hTemplateFile:         resb 8
-endstruc
-
-; rcx: hfile
-; rdx: lpbuffer
-; r8:  nNumberOfBytesToWrite
-; r9:  lpNumberOfBytesWritten
-; s1:  lpOverlapped
-struc WriteFileA_ctbl
-	.shadow:       resb 32
-	.lpOverlapped: resb 8
 endstruc
 
 section .data
 	std_out_hndl dq 0
 ;endregion WinAPI
 
-struc FileOpInfo
-	.content: resb Slice_Byte_size
-endstruc
-
 ;region file_read_contents
-
+%push proc_scope
 ; Reg allocation:
 ; result:  rcounter   = [FileOpInfo]
 ; path:    Slice_Str8 = { .ptr = rdata, .len = r8 }
 ; backing: r9         = [Slice_Byte]
-%push proc_scope
 %define result   rcounter
 %define path_ptr rdata
 %define path_len r8
@@ -454,9 +514,12 @@ endstruc
 
 section .text
 file_read_contents:
+	; validation
 	assert_not_null result
 	slice_assert    backing
 	slice_assert    path_ptr, path_len
+
+	; save registers
 	push rbase ; id_file
 	push r12   ; result
 	push r13   ; backing
@@ -465,22 +528,23 @@ file_read_contents:
 	mov  r13, backing
 	%define result  r12
 	%define backing r13
+
 	; rcounter = str8_to_cstr_capped(path, slice_fmem(scratch));
 		; We're using backing to store the cstr temporarily until ReadFile.
 	call str8_to_cstr_capped ; (rdata, r8, r9)
 	; path_cstr = rcounter; path_len has will be discarded in the CreateFileA call
 	%define path_cstr rcounter
 
-	wapi_shadow_space
-		; rcounter = path_cstr
+	stack_push CreateFileA_ctbl_size ; call-frame CreateFileA {
+		;                                  rcounter             = path_cstr           
 		mov rdata_32, MS_GENERIC_READ    ; dwDesiredAccess      = MS_GENERIC_READ
 		mov r8_32,    MS_FILE_SHARE_READ ; dwShareMode          = MS_FILE_SHARE_READ
 		xor r9, r9                       ; lpSecurityAttributes = nullptr
-		mov dword [rstack_ptr + wapi_CreateFileA_dwCreationDisposition], MS_OPEN_EXISTING
-		mov dword [rstack_ptr + wapi_CreateFileA_dwFlagsAndAttributes ], MS_FILE_ATTRIBUTE_NORMAL
-		mov qword [rstack_ptr + wapi_CreateFileA_hTemplateFile        ], nullptr
-	call CreateFileA
-	stack_pop
+		mov dword [rstack_ptr + CreateFileA_ctbl.dwCreationDisposition], MS_OPEN_EXISTING         ; stack.ptr[.dwCreationDisposition] = MS_OPEN_EXISTING
+		mov dword [rstack_ptr + CreateFileA_ctbl.dwFlagsAndAttributes ], MS_FILE_ATTRIBUTE_NORMAL ; stack.ptr[.dwFlagsAndAttributes ] = MS_FILE_ATTRIBUTE_NORMAL
+		mov qword [rstack_ptr + CreateFileA_ctbl.hTemplateFile        ], nullptr                  ; stack.ptr[.hTemplateFile        ] = nullptr
+	call CreateFileA ; CreateFileA <- rcounter, rdata, r8, r9, stack
+	stack_pop        ; }
 
 	; B32 open_failed = raccumulator == MS_INVALID_HANDLE_VALUE
 	; if (open_failed) goto %%.error_exit
@@ -490,36 +554,35 @@ file_read_contents:
 	mov rbase, raccumulator ; rbase = id_file
 	%define id_file rbase
 
-	wapi_shadow_space
-		mov rcounter, id_file
-		lea rdata, [result + FileOpInfo.content + Slice_Byte.len]; lpFileSize = result.content.len
-	call GetFileSizeEx
-	stack_pop
+	stack_push GetFileSizeEx_ctbl_size                          ; call-frame GetFileSizeEx {
+		mov rcounter, id_file                                     ; rcounter = id_file
+		lea rdata, [result + FileOpInfo.content + Slice_Byte.len] ; lpFileSize = result.content.len
+	call GetFileSizeEx                                          ; GetFileSizeEx <- rcounter, rdata, stack
+	stack_pop                                                   ; }
 
 	; B32 not_enough_backing = result.content.len > backing.len
-	; if (not_enough_backing) goto .error_exit
-	mov r8, [backing                      + Slice_Byte.len]
-	mov r9, [result  + FileOpInfo.content + Slice_Byte.len]
-	assert_cmp jle, r9, r8
-	jg .error_close_handle
+	; if (not_enough_backing) goto .error_close_handle
+	mov r8, [backing                      + Slice_Byte.len] ; r8 = backing.len
+	mov r9, [result  + FileOpInfo.content + Slice_Byte.len] ; r9 = result.content.len
+	assert_cmp jle, r9, r8                                  ; r9 <= r8
+	jg .error_close_handle                                  ; if (flagged greater) goto .error_close_handle
 
 	; MS_BOOL get_size_failed = ! raccumulator
 	; if (get_size_failed) goto .error_exit
-	assert_cmp jne, raccumulator, false
-	je .error_close_handle
+	assert_cmp jne, raccumulator, false ; raccumulator != false
+	je .error_close_handle              ; if (flagged equal) goto .error_close_handle
 
-	; push r14   ; file_size
 	%define file_size r14d
 	mov r14d, r9d
 
-	wapi_shadow_space
+	stack_push ReadFile_ctbl_size                                   ; call-frame ReadFile {
 		mov rcounter, id_file                                         ; hfile:              rcounter = rbase
 		mov rdata,    [backing + Slice_Byte.ptr                     ] ; lpBuffer:             rdata    = backing.ptr
 		mov r8_32,    file_size                                       ; nNumberOfBytesToRead: r8_32    = file_size
 		lea r9,       [result  + FileOpInfo.content + Slice_Byte.len] ; lpNumberOfBytesRead:  r9       = & result.content.len
-		mov qword [rstack_ptr + wapi_ReadFile_lpOverlapped], 0        ; lpOverlapped:         nullptr
-	call ReadFile
-	stack_pop
+		mov qword [rstack_ptr + ReadFile_ctbl.lpOverlapped], 0        ; lpOverlapped:         nullptr
+	call ReadFile                                                   ; ReadFile <- rcounter, rata, r8, r9, stack
+	stack_pop                                                       ; }
 
 	; B32 read_failed  = ! read_result
 	; if (read_failed) goto .error_exit
@@ -532,22 +595,21 @@ file_read_contents:
 	jne .error_close_handle
 
 	; CloseHandle(id_file)
-	wapi_shadow_space
-		mov rcounter, rbase
-	call CloseHandle
-	stack_pop
+	stack_push CloseHandle_ctbl_size ; call-frame CloseHandle {
+		mov rcounter, id_file          ; rcounter = id_file (rbase)
+	call CloseHandle                 ; CloseHandle <- rcounter, stack
+	stack_pop                        ; }
 
 	; reslt.content.ptr = raccumulator
-	mov raccumulator, [backing + Slice_Byte.ptr]
-	mov [result + FileOpInfo.content + Slice_Byte.ptr], raccumulator
-	jmp .cleanup
+	mov raccumulator, [backing + Slice_Byte.ptr]                     ; raccumulator       = backing.ptr
+	mov [result + FileOpInfo.content + Slice_Byte.ptr], raccumulator ; result.content.ptr = raccumulator
+	jmp .cleanup                                                     ; goto .cleanup
 
 .error_close_handle:
-	; CloseHandle(id_file)
-	wapi_shadow_space
-		mov rcounter, rbase
-	call CloseHandle
-	stack_pop
+	stack_push CloseHandle_ctbl_size ; call-frame CloseHandle {
+		mov rcounter, rbase            ; rcounter = id_file (rbase)
+	call CloseHandle                 ; CloseHandle <- rcounter, stack
+	stack_pop                        ; }
 
 .error_exit:
 		; result = {}
@@ -559,8 +621,8 @@ file_read_contents:
 	pop backing
 	pop result
 	pop id_file
+	; restore registers
 	ret
-%pop proc_scope
 
 section .bss
 	; local_persist raw_scratch : [64 * kilo]byte
@@ -573,12 +635,13 @@ section .data
 			at Slice_Byte.ptr, dq file_read_contents.raw_scratch
 			at Slice_Byte.len, dq 64 * kilo
 		iend
+%pop proc_scope
 ;endregion file_read_contents
 
 section .text
 global main
+%push proc_scope
 	main:
-	%push proc_scope
 		stack_push GetStdHandle_ctbl_size        ; call-frame GetStdHandle {
 			mov rcounter_32, -MS_STD_OUTPUT_HANDLE ; rcounter.32 = -MS_STD_OUTPUT_HANDLE
 		call GetStdHandle                        ; GetStdHandle <- rcounter, stack
@@ -586,10 +649,11 @@ global main
 		stack_pop                                ; }
 
 		; dbg_wipe_gprs
-		%push calling                                               
-		%assign     stack_offset 0
-		stack_slice Slice_Byte, local_backing                       ; call-frame file_read_contents {
-		stack_push  stack_offset                                    ; stack local_backing : Slice_byte
+		%push calling
+		call_frame 
+		%define local_backing rsp + Slice_Byte_size
+		call_frame_alloc Slice_Byte                                 ; stack local_backing : Slice_byte
+		call_frame_commit                                           ; call-frame file_read_contents {
 			mov qword [local_backing + Slice_Byte.ptr], read_mem      ; local_backing.ptr = read_mem.ptr
 			mov qword [local_backing + Slice_Byte.len], Mem_128k_size ; local_backing.len = Mem_128k_size
 			lea rcounter, file                                        ; rcounter          = file.ptr
@@ -597,24 +661,24 @@ global main
 			mov r8,    [path_hello_files_asm + Str8.len]              ; r8                = path_hello_files.len
 			lea r9,    [local_backing]                                ; r9                = & local_backing
 		call file_read_contents                                     ; read_file_contents <- rcounter, rdata, r8, r9, stack
-		stack_pop                                                   ; }
+		call_frame_end                                              ; }
 		%pop calling
 
-		stack_push WriteConsoleA_ctbl_size                                ; call-frame WriteConsoleA {
-			mov rcounter, [std_out_hndl]                                    ; rcounter = std_out_hndl
-			lea rdata,    [file + FileOpInfo.content + Slice_Byte.ptr]      ; rdata    = file.content.ptr
-			mov r8_32,    [file + FileOpInfo.content + Slice_Byte.len]      ; r8       = file.content.len
-			lea r9,   [rstack_ptr + WriteFileA_ctbl.lpNumberOfBytesWritten] ; r9       = & stack.ptr[WriteFileA.ctbl.lpNumberOfBytesWritten]
-			mov qword [rstack_ptr + WriteFileA_ctbl.lpReserved], nullptr    ; stack.ptr[.ctbl.lpRserved] = nullptr
-		call WriteConsoleA                                                ; WriteConsoleA <- rcounter, rdata, r9, stack 
-		stack_pop                                                         ; }
+		stack_push WriteConsoleA_ctbl_size                                   ; call-frame WriteConsoleA {
+			mov rcounter, [std_out_hndl]                                       ; rcounter = std_out_hndl
+			lea rdata,    [file + FileOpInfo.content + Slice_Byte.ptr]         ; rdata    = file.content.ptr
+			mov r8_32,    [file + FileOpInfo.content + Slice_Byte.len]         ; r8       = file.content.len
+			lea r9,   [rstack_ptr + WriteConsoleA_ctbl.lpNumberOfCharsWritten] ; r9       = & stack.ptr[WriteFileA.ctbl.lpNumberOfCharsWritten]
+			mov qword [rstack_ptr + WriteConsoleA_ctbl.lpReserved], nullptr    ; stack.ptr[.ctbl.lpRserved] = nullptr
+		call WriteConsoleA                                                   ; WriteConsoleA <- rcounter, rdata, r9, stack 
+		stack_pop                                                            ; }
 
 		; Exit program
 		stack_push ExitProcess_ctbl_size  ; call-frame ExitProcess {
 		xor     ecx, ecx                  ; ecx = 0
 		call    ExitProcess               ; ExitProcess <- rcx, stack
-		ret                               ; }
-	%pop proc_scope
+		ret                               ; } // Technically doesn't occur but here for "correctness"
+%pop proc_scope
 
 section .bss
 read_mem: resb Mem_128k_size   ; internal global read_mem: Mem_128k
