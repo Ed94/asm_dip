@@ -215,9 +215,9 @@ memory_copy:
 	cld
 	rep movsb ; REPEAT MoveStringByte
 		; 1. Copies the byte from [RSI] to [RDI].
-    ; 2. Increments RSI and RDI (because of CLD).
-    ; 3. Decrements RCX.
-    ; 4. Repeats until RCX is 0.
+		; 2. Increments RSI and RDI (because of CLD).
+		; 3. Decrements RCX.
+		; 4. Repeats until RCX is 0.
 	ret
 ;endregion memory_copy
 
@@ -415,7 +415,7 @@ extern GetStdHandle
 extern WriteConsoleA
 
 struc wapi_ctbl
-  .shadow: resb 32 ; 32 bytes for RCX, RDX, R8, R9
+  .shadow: resq 4 ; 32 bytes for RCX, RDX, R8, R9
 endstruc
 
 ; rcx: hObject
@@ -443,10 +443,11 @@ endstruc
 ; NOTE: Even though the first two are DWORDs, on the stack they each
 ;       occupy a full 8-byte slot in the x64 ABI.
 struc CreateFileA_ctbl
-	.shadow:                resb 32
-  .dwCreationDisposition: resb 8
-  .dwFlagsAndAttributes:  resb 8
-  .hTemplateFile:         resb 8
+	.shadow:                resq 4
+	.dwCreationDisposition: resq 1
+	.dwFlagsAndAttributes:  resq 1
+	.hTemplateFile:         resq 1
+	._pad                   resq 1
 endstruc
 
 ; rcx: hFile
@@ -463,7 +464,6 @@ endstruc
 struc ReadFile_ctbl
 	.shadow:       resq 4
 	.lpOverlapped: resq 1
-	._pad:         resq 1 ; 8 bytes padding for 16-byte stack alignment
 endstruc
 
 ; rcx: hFile
@@ -474,7 +474,6 @@ endstruc
 struc WriteFileA_ctbl
 	.shadow:       resq 4
 	.lpOverlapped: resq 1
-	._pad:         resq 1 ; 8 bytes padding for 16-byte stack alignment
 endstruc
 
 struc FileOpInfo
@@ -483,7 +482,7 @@ endstruc
 
 ; rcx: nStdHandle
 struc GetStdHandle_ctbl
-	.shadow: resb 32
+	.shadow: resq 4
 endstruc
 
 ; rcx: hConsoleOutput
@@ -524,6 +523,7 @@ file_read_contents:
 	push r12   ; result
 	push r13   ; backing
 	push r14   ; file_size
+	sub  rsp, 8
 	mov  r12, result
 	mov  r13, backing
 	%define result  r12
@@ -617,6 +617,7 @@ file_read_contents:
     mov qword [result + FileOpInfo.content + Slice_Byte.len], 0
 
 .cleanup:
+	add rsp, 8
 	pop r14 ; file_size
 	pop backing
 	pop result
@@ -643,7 +644,7 @@ global main
 %push proc_scope
 	main:
 		stack_push GetStdHandle_ctbl_size        ; call-frame GetStdHandle {
-			mov rcounter_32, -MS_STD_OUTPUT_HANDLE ; rcounter.32 = -MS_STD_OUTPUT_HANDLE
+			mov rcounter_32, MS_STD_OUTPUT_HANDLE  ; rcounter.32 = MS_STD_OUTPUT_HANDLE
 		call GetStdHandle                        ; GetStdHandle <- rcounter, stack
 			mov [std_out_hndl], raccumulator       ; std_out_hndl = raccumulator
 		stack_pop                                ; }
@@ -651,9 +652,9 @@ global main
 		; dbg_wipe_gprs
 		%push calling
 		call_frame 
-		%define local_backing rsp + Slice_Byte_size
-		call_frame_alloc Slice_Byte                                 ; stack local_backing : Slice_byte
+			call_frame_alloc Slice_Byte_size                          ; stack local_backing : Slice_byte
 		call_frame_commit                                           ; call-frame file_read_contents {
+			%define local_backing rsp + Slice_Byte_size
 			mov qword [local_backing + Slice_Byte.ptr], read_mem      ; local_backing.ptr = read_mem.ptr
 			mov qword [local_backing + Slice_Byte.len], Mem_128k_size ; local_backing.len = Mem_128k_size
 			lea rcounter, file                                        ; rcounter          = file.ptr
@@ -666,7 +667,7 @@ global main
 
 		stack_push WriteConsoleA_ctbl_size                                   ; call-frame WriteConsoleA {
 			mov rcounter, [std_out_hndl]                                       ; rcounter = std_out_hndl
-			lea rdata,    [file + FileOpInfo.content + Slice_Byte.ptr]         ; rdata    = file.content.ptr
+			mov rdata,    [file + FileOpInfo.content + Slice_Byte.ptr]         ; rdata    = file.content.ptr
 			mov r8_32,    [file + FileOpInfo.content + Slice_Byte.len]         ; r8       = file.content.len
 			lea r9,   [rstack_ptr + WriteConsoleA_ctbl.lpNumberOfCharsWritten] ; r9       = & stack.ptr[WriteFileA.ctbl.lpNumberOfCharsWritten]
 			mov qword [rstack_ptr + WriteConsoleA_ctbl.lpReserved], nullptr    ; stack.ptr[.ctbl.lpRserved] = nullptr

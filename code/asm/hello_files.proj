@@ -81,46 +81,16 @@ breakpoint:
 }
 breakpoint:
 {
-  source_location: "hello_files.asm:469:1"
-  hit_count: 0
+  source_location: "hello_files.asm:674:1"
+  hit_count: 1
 }
 breakpoint:
 {
-  source_location: "hello_files.asm:474:1"
-  hit_count: 0
+  source_location: "hello_files.asm:584:1"
+  hit_count: 1
 }
 breakpoint:
 {
-  source_location: "hello_files.asm:494:1"
-  hit_count: 0
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:500:1"
-  hit_count: 0
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:504:1"
-  hit_count: 0
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:516:1"
-  hit_count: 0
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:510:1"
-  hit_count: 0
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:443:1"
-  hit_count: 0
-}
-breakpoint:
-{
-  source_location: "hello_files.asm:455:1"
-  hit_count: 0
+  source_location: "hello_files.asm:605:1"
+  hit_count: 1
 }
