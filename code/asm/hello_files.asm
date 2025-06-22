@@ -276,13 +276,10 @@ def_Slice Byte
 	push rstack_base_ptr             ; Save the caller's frame pointer (RBP)
 	mov  rstack_base_ptr, rstack_ptr ; Set our new frame pointer to the current stack position
 %endmacro
-
 ; Usage: cf_alloc <size_or_symbol> (call-frame allocate)
-; Immediately allocates a block of memory on the stack.
 %macro cf_alloc 1
-	sub  rstack_ptr, %1       ; Allocate space by subtracting from the stack pointer (RSP)
+	sub  rstack_ptr, %1 ; Allocate space by subtracting from the stack pointer (RSP)
 %endmacro
-
 ; Usage: cf_commit (call-frame commit)
 ; Finalizes the stack frame by ensuring it is correctly aligned for a function call.
 %macro cf_commit 0
@@ -291,17 +288,14 @@ def_Slice Byte
 	; by clearing the last 4 bits of RSP, rounding it down to the nearest multiple of 16.
 	and  rstack_ptr, ~15
 %endmacro
-
 ; Usage: cf_end (call-frame end)
 ; Tears down the stack frame, deallocating all memory and restoring the caller's frame.
-; This is a standard function epilogue.
 %macro cf_end 0
 	; Deallocate the entire frame at once by resetting RSP to the saved RBP
 	mov rstack_ptr, rstack_base_ptr
 	; Restore the caller's frame pointer
 	pop rstack_base_ptr
 %endmacro
-
 %macro cf_ctbl 1
 	cf
 		cf_alloc %1 %+ _ctbl_size
@@ -681,7 +675,6 @@ global main
 			call WriteConsoleA                                                 ; WriteConsoleA <- rcounter, rdata, r9, stack 
 		cf_end
 
-		; Exit program
 		cf_ctbl ExitProcess   ; call-frame ExitProcess {
 			xor     ecx, ecx    ; ecx = 0
 			call    ExitProcess ; ExitProcess <- rcx, stack
